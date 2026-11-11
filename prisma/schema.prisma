@@ -1,0 +1,215 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// 1. Materia / Cuaderno Universitario
+model Subject {
+  id           String            @id @default(cuid())
+  name         String            // ej. "Cálculo I", "Fundamentos de Diseño"
+  emoji        String            @default("📚") // ej. "📐", "🎨", "🗣️", "🔬"
+  color        String            @default("#007AFF") // Apple hex: #007AFF, #5856D6, #34C759, #FF9500, #FF2D55, #AF52DE, #5AC8FA
+  teacherName  String?           // Nombre del profesor
+  defaultRoom  String?           // ej. "Bloque B - Salón 204"
+  passingGrade Float             @default(3.0) // Nota mínima para aprobar (sobre 5.0)
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+
+  schedules    ScheduleBlock[]
+  notes        NotePage[]
+  tasks        TaskAssignment[]
+  grades       GradeItem[]
+  courseBooks  CourseBook[]
+
+  @@map("subjects")
+}
+
+// 2. Bloque del Horario Híbrido (Clases U + Hábitos + Aprendizaje Externo)
+model ScheduleBlock {
+  id                String      @id @default(cuid())
+  subjectId         String?     // Opcional para Hábitos o Estudio Externo
+  subject           Subject?    @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  blockType         String      @default("UNIVERSITY_CLASS") // "UNIVERSITY_CLASS", "HABIT", "EXTERNAL_STUDY"
+  customTitle       String?     // ej. "Entrenamiento / Gym", "Estudiar Redes e Infraestructura"
+  emoji             String?     // ej. "💪", "🌐", "📖"
+  color             String?     // Apple hex: #007AFF, #FF9500, #34C759, etc.
+  externalUrl       String?     // Link directo: video, curso, libro o repo
+  resourceType      String?     // "VIDEO", "COURSE", "BOOK", "PROJECT", "HABIT_ROUTINE"
+  currentStreak     Int         @default(0) // Racha de días cumplidos
+  lastCompletedDate String?     // Fecha YYYY-MM-DD del último cumplimiento
+
+  dayOfWeek         Int         // 1 = Lunes, 2 = Martes, 3 = Miércoles, 4 = Jueves, 5 = Viernes, 6 = Sábado, 7 = Domingo
+  startTime         String      // ej. "08:00"
+  endTime           String      // ej. "10:00"
+  room              String?     // Salón específico o link virtual
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+
+  habitLogs         HabitLog[]
+
+  @@index([subjectId])
+  @@index([dayOfWeek])
+  @@index([blockType])
+  @@map("schedule_blocks")
+}
+
+// 3. Historial de Cumplimiento de Hábitos y Bloques Externos
+model HabitLog {
+  id              String        @id @default(cuid())
+  scheduleBlockId String
+  scheduleBlock   ScheduleBlock @relation(fields: [scheduleBlockId], references: [id], onDelete: Cascade)
+  dateString      String        // YYYY-MM-DD
+  completed       Boolean       @default(true)
+  createdAt       DateTime      @default(now())
+
+  @@index([scheduleBlockId])
+  @@index([dateString])
+  @@map("habit_logs")
+}
+
+// 4. El Apunte / Tema con Cuaderno Adaptativo (4 Métodos de Estudio)
+model NotePage {
+  id              String   @id @default(cuid())
+  subjectId       String
+  subject         Subject  @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  title           String   // ej. "Clase 4: Derivadas y Regla de la Cadena"
+  studyMethod     String   @default("FREE") // FREE, CORNELL, FEYNMAN, ACTIVE_RECALL
+  isFavorite      Boolean  @default(false)
+  masteryLevel    String   @default("YELLOW_MEDIUM") // RED_HARD ("Me cuesta"), YELLOW_MEDIUM ("Repasando"), GREEN_READY ("Listo para el parcial")
+
+  // Campos flexibles para preservar el contenido al cambiar entre métodos:
+  freeContent     String   @default("") // Texto / Markdown libre
+  cornellCues     String   @default("") // Ideas clave y preguntas (columna izquierda)
+  cornellSummary  String   @default("") // Resumen en 3 líneas
+  feynmanSimple   String   @default("") // "Explícalo a alguien de 12 años"
+  feynmanGaps     String   @default("") // "¿En qué me enredé o qué debo preguntar?"
+  feynmanExample  String   @default("") // "Ejemplo de la vida real o analogía"
+  flashcardsJson  String   @default("[]") // JSON string de [{ id, question, answer, learned }]
+  attachmentsJson String   @default("[]") // JSON string de [{ id, title, url, type }]
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([subjectId])
+  @@index([masteryLevel])
+  @@map("note_pages")
+}
+
+// 5. Entregas, Trabajos y Parciales
+model TaskAssignment {
+  id          String   @id @default(cuid())
+  subjectId   String
+  subject     Subject  @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  title       String   // ej. "Parcial 1", "Taller en grupo", "Quiz de lectura"
+  type        String   @default("HOMEWORK") // EXAM, HOMEWORK, QUIZ, READING
+  dueDate     DateTime // Fecha y hora límite
+  isCompleted Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([subjectId])
+  @@index([dueDate])
+  @@map("task_assignments")
+}
+
+// 6. Cortes y Notas para la Calculadora de Salvación
+model GradeItem {
+  id            String   @id @default(cuid())
+  subjectId     String
+  subject       Subject  @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  name          String   // ej. "Primer Corte (30%)", "Segundo Corte (30%)", "Examen Final (40%)"
+  weightPercent Float    // Porcentaje de peso (ej. 30 para 30%)
+  score         Float?   // Nota obtenida sobre 5.0 (ej. 4.2), null si está pendiente
+  maxScore      Float    @default(5.0) // Escala máxima estándar universitaria
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([subjectId])
+  @@map("grade_items")
+}
+
+// 7. Notificaciones, Alertas y Consejos Proactivos de Gemini
+model AINotification {
+  id        String   @id @default(cuid())
+  title     String   // ej. "🔥 Racha en peligro", "⚡ Próxima Clase en 15 min"
+  message   String   // Contenido motivador o recordatorio redactado por IA
+  type      String   // "REMINDER", "STUDY_TIP", "HABIT_NUDGE", "GRADE_ALERT"
+  priority  String   @default("NORMAL") // "NORMAL", "HIGH"
+  actionUrl String?  // Ruta de navegación interna (ej. "/subjects/123", "/schedule")
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([isRead])
+  @@index([createdAt])
+  @@map("ai_notifications")
+}
+
+// 8. Configuración del Motor Gemini AI
+model AISettings {
+  id                         String   @id @default("default")
+  geminiApiKey               String?  // API key guardada por el usuario o leída de env
+  modelName                  String   @default("gemini-3.5-flash") // Modelo principal
+  enableBrowserNotifications Boolean  @default(true)
+  studentGoal                String?  // Meta personal del semestre
+  updatedAt                  DateTime @updatedAt
+
+  @@map("ai_settings")
+}
+
+// 9. Cursos y Libros Propios con Experiencia 3D y Edición por Bloques Notion
+model CourseBook {
+  id            String           @id @default(cuid())
+  title         String           // Título del libro/curso
+  subtitle      String?          // Subtítulo editorial
+  description   String?          // Resumen o sinopsis del curso
+  category      String           @default("General") // ej. "Desarrollo", "Redes", "Diseño", "Universidad"
+  subjectId     String?          // Vinculación opcional con una materia
+  subject       Subject?         @relation(fields: [subjectId], references: [id], onDelete: SetNull)
+
+  // Personalización Estética Apple Books
+  coverColor    String           @default("#007AFF") // Color principal de cubierta
+  coverGradient String           @default("from-blue-600 via-indigo-600 to-purple-700") // Gradiente
+  coverIcon     String           @default("📖") // Emoji o icono de portada
+  coverStyle    String           @default("editorial") // "minimal", "editorial", "technical", "leather"
+  paperTexture  String           @default("blank") // "blank", "sepia", "dotted", "grid", "lined", "dark"
+  fontFamily    String           @default("sans") // "sans", "serif", "mono"
+  fontSize      String           @default("base") // "sm", "base", "lg", "xl"
+  lineHeight    String           @default("relaxed") // "compact", "relaxed", "loose"
+  pageLayout    String           @default("spread") // "single", "spread" (doble hoja)
+  pageMargins   String           @default("normal") // "narrow", "normal", "wide"
+
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  pages         CourseBookPage[]
+
+  @@index([subjectId])
+  @@index([category])
+  @@map("course_books")
+}
+
+// 10. Hojas Numeradas del Libro con Bloques Tipo Notion
+model CourseBookPage {
+  id           String     @id @default(cuid())
+  bookId       String
+  book         CourseBook @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  pageNumber   Int        // 1, 2, 3...
+  title        String?    // Título opcional de la hoja/capítulo
+  isBookmarked Boolean    @default(false)
+  blocksJson   String     @default("[]") // Lista ordenada de bloques Notion en JSON
+
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  @@index([bookId, pageNumber])
+  @@index([bookId])
+  @@map("course_book_pages")
+}

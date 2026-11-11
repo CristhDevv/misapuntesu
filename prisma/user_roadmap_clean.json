@@ -1,0 +1,925 @@
+{
+  "roadmap": {
+    "title": "Infraestructura TI, Redes Empresariales y Administración de Servidores",
+    "description": "Ruta completa desde cero para dominar la administración de redes locales, routers empresariales (MikroTik/pfSense), segmentación por VLANs, despliegue de servidores Linux/Windows con Docker y Proxmox, acceso remoto detrás de CG-NAT y continuidad operativa en empresas colombianas.",
+    "category": "Redes y Sistemas",
+    "status": "ACTIVE",
+    "phases": [
+      {
+        "title": "Paso 1: Cómo se conectan e identifican los equipos (Cero Absoluto)",
+        "orderIndex": 1,
+        "executionMode": "SEQUENTIAL",
+        "parallelNote": "Mientras estudias el direccionamiento lógico, practica el código de colores de cableado UTP (T568B), identifica las bandas Wi-Fi (2.4 GHz vs 5 GHz) y ejecuta pruebas con ipconfig y ping en la terminal.",
+        "topics": [
+          {
+            "title": "Dirección MAC vs. Dirección IP (Privada LAN vs. Pública WAN)",
+            "description": "Diferencia entre el identificador físico de fábrica de la tarjeta de red (MAC) y el direccionamiento lógico IPv4 dentro de la oficina (LAN) frente a la IP única de salida a internet asignada por el ISP (WAN).",
+            "orderIndex": 1,
+            "trackType": "THEORY",
+            "priority": "HIGH",
+            "estimatedHours": 4,
+            "completionCriteria": "Explicar claramente qué es una IP privada, por qué los equipos locales usan rangos como 192.168.x.x y cómo el protocolo ARP vincula la IP con la dirección MAC.",
+            "studyMaterials": [
+              {
+                "title": "Networking Basics - Cisco Networking Academy",
+                "type": "COURSE",
+                "url": "https://skillsforall.com/course/networking-basics",
+                "authorOrSource": "Cisco Skills For All",
+                "status": "TO_CONSUME",
+                "rating": 5,
+                "keyNotes": "Revisar los módulos de direccionamiento IPv4, direcciones MAC y comunicación en red local."
+              },
+              {
+                "title": "RFC 1918 - Address Allocation for Private Internets",
+                "type": "ARTICLE_DOC",
+                "url": "https://datatracker.ietf.org/doc/html/rfc1918",
+                "authorOrSource": "IETF",
+                "status": "TO_CONSUME",
+                "rating": 4,
+                "keyNotes": "Referencia de los tres bloques de IPs privadas: 10.0.0.0/8, 172.16.0.0/12 y 192.168.0.0/16."
+              }
+            ],
+            "notes": [
+              {
+                "title": "Rangos IPv4 Privados y Tabla ARP",
+                "keyTakeaways": "MAC = Física (Capa 2), IP = Lógica (Capa 3). Rangos LAN: 192.168.0.0/16, 172.16.0.0/12, 10.0.0.0/8.",
+                "tags": "redes, ipv4, mac, arp, lan, wan",
+                "contentMarkdown": "## Identificación en la Red\n\n- **Dirección MAC:** Identificador físico único de 48 bits en formato hexadecimal (ej. `00:1A:2B:3C:4D:5E`). Opera en la Capa 2 (Enlace de datos).\n- **Dirección IP Privada (LAN):** Uso exclusivo dentro de la empresa. No es enrutable directamente en internet.\n- **Dirección IP Pública (WAN):** Identificador global asignado por el operador (Claro, Movistar, Tigo, etc.).\n\n```bash\n# Ver tabla ARP (relación IP <-> MAC) en Windows y Linux\narp -a\n```"
+              }
+            ],
+            "tasks": [
+              {
+                "title": "Identificar la dirección MAC y la IP privada de tu computador y de tu celular conectado al Wi-Fi",
+                "priority": "HIGH"
+              },
+              {
+                "title": "Consultar la tabla ARP local en consola con arp -a tras hacer ping a otro equipo",
+                "priority": "MEDIUM"
+              }
+            ]
+          },
+          {
+            "title": "Máscara de Subred (CIDR), Puerta de Enlace y Puertos TCP/UDP",
+            "description": "Comprensión de la notación CIDR (/24, /30), función del Default Gateway como salida hacia otras redes y memorización de los puertos estándar donde escuchan los servicios empresariales.",
+            "orderIndex": 2,
+            "trackType": "THEORY",
+            "priority": "HIGH",
+            "estimatedHours": 5,
+            "completionCriteria": "Saber cuántos equipos caben en una red /24, identificar la IP del Gateway y reconocer de memoria los puertos 22, 53, 80, 443, 3389, 3306 y 5432.",
+            "studyMaterials": [
+              {
+                "title": "Subnetting Mastery - Practical Networking",
+                "type": "VIDEO",
+                "url": "https://www.youtube.com/playlist?list=PLIFyRwBY_4bQUE4IB5c4VPRyDoLgOdExE",
+                "authorOrSource": "Practical Networking",
+                "status": "TO_CONSUME",
+                "rating": 5,
+                "keyNotes": "Ver los primeros 3 episodios sobre máscara de subred y notación CIDR."
+              },
+              {
+                "title": "Calculadora visual de Subredes CIDR",
+                "type": "LAB_SIMULATOR",
+                "url": "https://www.subnetting.net/",
+                "authorOrSource": "Subnetting.net",
+                "status": "TO_CONSUME",
+                "rating": 4,
+                "keyNotes": "Practicar el cálculo rápido de redes /24 (254 hosts) y /30 (2 hosts para enlaces punto a punto)."
+              }
+            ],
+            "notes": [
+              {
+                "title": "Puertos Críticos y Máscaras de Red",
+                "keyTakeaways": "/24 = 255.255.255.0 (254 equipos útiles). Puertos clave: 22 (SSH), 80/443 (Web), 3389 (RDP), 5432 (PostgreSQL).",
+                "tags": "cidr, subnetting, puertos, tcp, udp, gateway",
+                "contentMarkdown": "## Mapa de Puertos Esenciales en Empresas\n\n| Puerto | Protocolo | Servicio / Uso |\n| :--- | :--- | :--- |\n| `22` | TCP | SSH (Administración remota Linux) |\n| `53` | TCP/UDP | DNS (Resolución de nombres) |\n| `80` / `443` | TCP | HTTP / HTTPS (Servidores Web y APIs) |\n| `445` | TCP | SMB (Carpetas e impresoras compartidas en Windows) |\n| `3306` / `5432` | TCP | MySQL / PostgreSQL |\n| `3389` | TCP/UDP | Escritorio Remoto de Windows (RDP) |\n| `8291` | TCP | WinBox (Administración de routers MikroTik) |"
+              }
+            ],
+            "tasks": [
+              {
+                "title": "Listar qué puertos están abiertos y en estado LISTENING en tu computador usando netstat -ano",
+                "priority": "HIGH"
+              }
+            ]
+          },
+          {
+            "title": "Laboratorio Físico y de Consola: Cableado Cat 6 (T568B), Bandas Wi-Fi e ipconfig/ping",
+            "description": "Práctica simultánea de estándares físicos (diferencias entre cable UTP Cat 6 y Cat 6A, norma de ponchado T568B, canales Wi-Fi 2.4 GHz vs 5 GHz) y pruebas de conectividad básica en terminal.",
+            "orderIndex": 3,
+            "trackType": "PRACTICE_SIMULTANEOUS",
+            "priority": "HIGH",
+            "estimatedHours": 4,
+            "completionCriteria": "Ejecutar ipconfig /all e interpretar cada línea, medir la latencia hacia el router y hacia internet con ping, y conocer el orden exacto de los 8 hilos en la norma T568B.",
+            "studyMaterials": [
+              {
+                "title": "Norma de cableado estructurado T568A vs T568B",
+                "type": "ARTICLE_DOC",
+                "url": "https://www.flukenetworks.com/knowledge-base/application-or-standards-articles-copper/t568a-and-t568b-wiring-schemes",
+                "authorOrSource": "Fluke Networks",
+                "status": "TO_CONSUME",
+                "rating": 5,
+                "keyNotes": "En Colombia el estándar utilizado en casi todos los racks y oficinas es T568B en ambos extremos (cable directo)."
+              }
+            ],
+            "notes": [
+              {
+                "title": "Norma T568B y Comandos de Diagnóstico Nivel 1",
+                "keyTakeaways": "T568B: Blanco-Naranja, Naranja, Blanco-Verde, Azul, Blanco-Azul, Verde, Blanco-Café, Café.",
+                "tags": "utp, cat6, t568b, wifi, ping, ipconfig",
+                "contentMarkdown": "## Comandos de Verificación Rápida\n\n```powershell\n# Ver toda la configuración de red (IP, Máscara, Gateway, MAC y DNS)\nipconfig /all\n\n# Probar si hay comunicación con el router local (debe responder < 2ms por cable)\nping 192.168.1.1\n\n# Probar salida directa a internet sin usar DNS\nping 8.8.8.8 -t\n```\n\n## Regla de Oro en Wi-Fi de Oficina\n- **2.4 GHz:** Solo usar canales `1`, `6` u `11` (son los únicos que no se solapan entre sí). Mayor alcance pero menor velocidad.\n- **5 GHz:** Ideal para portátiles y teléfonos cercanos; mucha más velocidad y menos interferencia."
+              }
+            ],
+            "tasks": [
+              {
+                "title": "Ejecutar ipconfig /all en CMD y anotar tu IP privada, máscara, puerta de enlace y servidores DNS actuales",
+                "priority": "HIGH"
+              },
+              {
+                "title": "Hacer ping desde el PC a la IP privada de tu celular y comparar el tiempo de respuesta en milisegundos",
+                "priority": "MEDIUM"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Paso 2: Los 3 servicios que hacen funcionar el Internet en la oficina",
+        "orderIndex": 2,
+        "executionMode": "SEQUENTIAL",
+        "parallelNote": "A medida que estudies DHCP, DNS y NAT, entra a la interfaz web de tu módem casero (192.168.1.1 o 192.168.0.1) y ejecuta nslookup y tracert en consola.",
+        "topics": [
+          {
+            "title": "Servidor DHCP, Tiempos de Concesión y Reservas de IP (Static Leases)",
+            "description": "Funcionamiento del reparto automático de direcciones IP y cómo amarrar la dirección MAC de impresoras, servidores, cámaras y biométricos para que siempre reciban la misma IP interna.",
+            "orderIndex": 1,
+            "trackType": "THEORY",
+            "priority": "HIGH",
+            "estimatedHours": 4,
+            "completionCriteria": "Explicar el proceso DHCP (DORA) y saber cuándo asignar una IP estática manual fuera del pool DHCP vs. crear una reserva DHCP por MAC en el router.",
+            "studyMaterials": [
+              {
+                "title": "DHCP Explained - Step by Step",
+                "type": "VIDEO",
+                "url": "https://www.youtube.com/watch?v=e6-TaH5bkjo",
+                "authorOrSource": "PowerCert Animated Videos",
+                "status": "TO_CONSUME",
+                "rating": 5,
+                "keyNotes": "Prestar especial atención a la diferencia entre rango dinámico (Pool) y reservas estáticas (DHCP Reservation)."
+              }
+            ],
+            "notes": [
+              {
+                "title": "Buenas Prácticas de DHCP en Empresas",
+                "keyTakeaways": "Nunca dejes impresoras de red, servidores o cámaras con IP dinámica. Reserva del .2 al .50 para equipos fijos y deja el pool DHCP del .51 al .250.",
+                "tags": "dhcp, ip-fija, impresoras, servidores, red-local",
+                "contentMarkdown": "## Organización recomendada de una red `192.168.10.0/24`\n\n- `192.168.10.1` -> Router / Puerta de enlace (Gateway)\n- `192.168.10.2` a `192.168.10.19` -> Switches administrables y Access Points Wi-Fi\n- `192.168.10.20` a `192.168.10.39` -> Servidores locales y NAS\n- `192.168.10.40` a `192.168.10.59` -> Impresoras de red, escáneres y relojes biométricos\n- `192.168.10.100` a `192.168.10.250` -> **Pool DHCP** para computadores y celulares"
+              }
+            ],
+            "tasks": [
+              {
+                "title": "Diseñar en papel o nota el plan de direccionamiento IP para una oficina con 2 servidores, 3 impresoras y 30 empleados",
+                "priority": "MEDIUM"
+              }
+            ]
+          },
+          {
+            "title": "DNS Interno y Público (Registros A, CNAME, MX y TXT para Correos)",
+            "description": "Cómo se traducen los dominios a direcciones IP, cambio de servidores recursivos (Cloudflare 1.1.1.1 / Google 8.8.8.8) y administración de zonas DNS para sitios web y correo corporativo seguro.",
+            "orderIndex": 2,
+            "trackType": "THEORY",
+            "priority": "HIGH",
+            "estimatedHours": 5,
+            "completionCriteria": "Diagnosticar cuándo una caída de internet es realmente un fallo del DNS del operador y saber configurar registros A, CNAME, MX, SPF y DMARC en un panel como Cloudflare.",
+            "studyMaterials": [
+              {
+                "title": "Cloudflare Learning Center - What is DNS?",
+                "type": "ARTICLE_DOC",
+                "url": "https://www.cloudflare.com/learning/dns/what-is-dns/",
+                "authorOrSource": "Cloudflare",
+                "status": "TO_CONSUME",
+                "rating": 5,
+                "keyNotes": "Revisar tipos de registros DNS y cómo funciona la caché DNS."
+              }
+            ],
+            "notes": [
+              {
+                "title": "Registros DNS Esenciales y Diagnóstico",
+                "keyTakeaways": "Si ping 8.8.8.8 responde pero no abre google.com, el problema es el DNS. Usa 1.1.1.1 o 8.8.8.8.",
+                "tags": "dns, cloudflare, dominios, spf, dmarc",
+                "contentMarkdown": "## Tipos de Registros DNS que todo SysAdmin maneja\n\n- **Registro A:** Conecta un dominio o subdominio con una dirección IPv4 (ej. `app.miempresa.co` -> `181.50.x.x`).\n- **Registro CNAME:** Crea un alias de un nombre hacia otro dominio.\n- **Registro MX:** Indica qué servidores reciben los correos electrónicos del dominio (Google Workspace, Microsoft 365, Zoho).\n- **Registro TXT (SPF, DKIM, DMARC):** Obligatorios para autenticar el envío de correos empresariales y evitar que lleguen a la bandeja de Spam.\n\n```powershell\n# Limpiar la caché DNS en Windows cuando un dominio cambió de IP\nipconfig /flushdns\n```"
+              }
+            ],
+            "tasks": [
+              {
+                "title": "Consultar con nslookup los registros A y MX de un dominio empresarial real desde la terminal",
+                "priority": "HIGH"
+              }
+            ]
+          },
+          {
+            "title": "NAT, Port Forwarding y el bloqueo por CG-NAT en operadores de Colombia",
+            "description": "Comprensión de la traducción de direcciones de red (NAT) y cómo detectar si el proveedor de internet entrega una IP pública real o si el enlace está detrás de CG-NAT (Carrier-Grade NAT).",
+            "orderIndex": 3,
+            "trackType": "THEORY",
+            "priority": "HIGH",
+            "estimatedHours": 4,
+            "completionCriteria": "Comprobar en menos de 2 minutos si una conexión de internet en Colombia tiene CG-NAT comparando la IP WAN del módem con la IP pública reportada en el navegador.",
+            "studyMaterials": [
+              {
+                "title": "Network Address Translation (NAT) y CG-NAT explicado",
+                "type": "ARTICLE_DOC",
+                "url": "https://tailscale.com/kb/1223/cgnat",
+                "authorOrSource": "Tailscale Docs",
+                "status": "TO_CONSUME",
+                "rating": 5,
+                "keyNotes": "Explica el rango 100.64.0.0/10 usado por los ISP para CG-NAT y por qué impide abrir puertos tradicionales."
+              }
+            ],
+            "notes": [
+              {
+                "title": "Cómo detectar CG-NAT en Claro, Movistar, Tigo o ISP locales",
+                "keyTakeaways": "Si la IP WAN del router empieza por 100.64.x.x - 100.127.x.x o no coincide con cual-es-mi-ip.net, estás detrás de CG-NAT.",
+                "tags": "nat, cgnat, isp, colombia, port-forwarding",
+                "contentMarkdown": "## ¿Cómo saber si tienes CG-NAT?\n\n1. Entra a una web como `ifconfig.me` o `cualesmiip.com` y anota la IP pública que aparece.\n2. Entra al módem del operador y mira el estado de la interfaz **WAN** (o ejecuta `tracert 8.8.8.8`).\n3. Si la IP WAN del módem es diferente a la de la página web (por ejemplo, empieza por `100.64.x.x` o `10.x.x.x`), el operador tiene **CG-NAT activo**.\n\n> **Consecuencia:** Con CG-NAT ningún Port Forwarding tradicional funcionará desde internet. Se debe pedir IP pública dinámica/fija al operador o usar túneles como **Tailscale** o **Cloudflare Tunnels**."
+              }
+            ],
+            "tasks": [
+              {
+                "title": "Verificar si tu conexión de internet actual tiene CG-NAT usando tracert 8.8.8.8 y comparando con ifconfig.me",
+                "priority": "HIGH"
+              }
+            ]
+          },
+          {
+            "title": "Práctica de Inspección en Módem Casero y Comandos nslookup / tracert",
+            "description": "Ingreso real al panel de administración del router/módem actual para configurar una reserva DHCP por MAC, cambiar servidores DNS y analizar saltos de red.",
+            "orderIndex": 4,
+            "trackType": "PRACTICE_SIMULTANEOUS",
+            "priority": "HIGH",
+            "estimatedHours": 3,
+            "completionCriteria": "Dejar la IP de tu computador o celular reservada de forma fija en el servidor DHCP de tu router y comprobar que siempre recibe la misma IP al reconectarse.",
+            "studyMaterials": [],
+            "notes": [
+              {
+                "title": "Guía de Comandos de Diagnóstico de Capa 3",
+                "keyTakeaways": "nslookup prueba el DNS; tracert (Windows) o mtr/traceroute (Linux) muestra en qué salto exacto se cae el internet.",
+                "tags": "nslookup, tracert, mtr, diagnostico, router",
+                "contentMarkdown": "## Comandos de Auditoría de Enlace\n\n```powershell\n# Consultar qué IP devuelve el DNS actual vs el DNS de Cloudflare (1.1.1.1)\nnslookup google.com\nnslookup google.com 1.1.1.1\n\n# Rastrear todos los routers por los que pasa tu tráfico hasta llegar a Google\ntracert -d 8.8.8.8\n```"
+              }
+            ],
+            "tasks": [
+              {
+                "title": "Entrar a la configuración de tu router local y crear una Reserva DHCP (Static Lease) para la MAC de tu computador",
+                "priority": "HIGH"
+              },
+              {
+                "title": "Ejecutar tracert -d 8.8.8.8 e identificar cuál es el primer salto (tu router) y el segundo salto (el nodo de tu proveedor de internet)",
+                "priority": "HIGH"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Paso 3: Cómo conectar muchos equipos y dividir la red (Switches y Wi-Fi Pro)",
+        "orderIndex": 3,
+        "executionMode": "SEQUENTIAL",
+        "parallelNote": "Instala el simulador gratuito Cisco Packet Tracer en tu PC y construye cada topología de switches y VLANs a medida que avanzas en la teoría.",
+        "topics": [
+          {
+            "title": "Switches No Administrables vs. Switches Administrables",
+            "description": "Cuándo usar un switch básico de conexión directa y cuándo es obligatorio implementar un switch administrable (Capa 2 / Capa 3 ligero) para controlar puertos, bucles de red y segmentación.",
+            "orderIndex": 1,
+            "trackType": "THEORY",
+            "priority": "MEDIUM",
+            "estimatedHours": 3,
+            "completionCriteria": "Explicar cómo un switch aprende las direcciones MAC en su tabla CAM y qué ventajas operativas da un switch administrable en una oficina de más de 15 dispositivos.",
+            "studyMaterials": [
+              {
+                "title": "How does a Switch work? Layer 2 Switching",
+                "type": "VIDEO",
+                "url": "https://www.youtube.com/watch?v=AhOU2eOpmX0",
+                "authorOrSource": "Practical Networking",
+                "status": "TO_CONSUME",
+                "rating": 5,
+                "keyNotes": "Entender cómo el switch inunda (flood), aprende (learn) y reenvía (forward) tramas Ethernet."
+              }
+            ],
+            "notes": [
+              {
+                "title": "Criterios de Elección de Switches en Oficina",
+                "keyTakeaways": "Siempre elegir switches Gigabit (10/100/1000 Mbps). Usar administrables (Smart Managed) cuando se requieran VLANs para separar áreas o Wi-Fi de invitados.",
+                "tags": "switch, gigabit, capa2, infraestructura",
+                "contentMarkdown": "## Qué revisar antes de comprar un Switch para una empresa\n\n1. **Velocidad de puertos:** Que todos los puertos sean **Gigabit Ethernet (`1000 Mbps`)**. Nunca comprar switches Fast Ethernet (`100 Mbps`) hoy en día.\n2. **Administración:** Un switch *Unmanaged* sirve para ampliar puertos en una sola área pequeña; un switch *Smart/Managed* (ej. TP-Link Omada JetStream, Ubiquiti UniFi o MikroTik CSS/CRS) permite crear **VLANs** y detectar cables en bucle (*Loopback detection*)."
+              }
+            ],
+            "tasks": [
+              {
+                "title": "Comparar la ficha técnica de un switch no administrable vs un switch Smart Managed de 16 o 24 puertos Gigabit",
+                "priority": "LOW"
+              }
+            ]
+          },
+          {
+            "title": "Segmentación con VLANs (802.1Q): Puertos Access vs. Puertos Trunk",
+            "description": "División lógica de una red física en múltiples redes virtuales aisladas (Administración, Ventas, Invitados, Cámaras IP) usando etiquetado 802.1Q entre el router y los switches.",
+            "orderIndex": 2,
+            "trackType": "THEORY",
+            "priority": "HIGH",
+            "estimatedHours": 6,
+            "completionCriteria": "Diferenciar sin dudar qué es un puerto Access (sin etiquetar / untagged, va hacia un PC o impresora) y qué es un puerto Trunk (etiquetado / tagged 802.1Q, une el router con el switch o con un Access Point empresarial).",
+            "studyMaterials": [
+              {
+                "title": "VLANs Explained - Access vs Trunk Ports (802.1Q)",
+                "type": "ARTICLE_DOC",
+                "url": "https://www.practicalnetworking.net/stand-alone/vlans/",
+                "authorOrSource": "Practical Networking",
+                "status": "TO_CONSUME",
+                "rating": 5,
+                "keyNotes": "La guía más clara en internet sobre cómo viajan las etiquetas VLAN entre switches y routers."
+              }
+            ],
+            "notes": [
+              {
+                "title": "Arquitectura Estándar de VLANs en una PyME",
+                "keyTakeaways": "Puerto Access = 1 sola VLAN (hacia PC o impresora). Puerto Trunk = Transporte de varias VLANs etiquetadas con 802.1Q (entre Router, Switch y AP Wi-Fi).",
+                "tags": "vlan, 8021q, trunk, access, seguridad-red",
+                "contentMarkdown": "## Diseño Recomendado de VLANs Empresariales\n\n| VLAN ID | Nombre | Rango IP | Propósito y Regla de Seguridad |\n| :--- | :--- | :--- | :--- |\n| **VLAN 10** | `Admin_Contabilidad` | `192.168.10.0/24` | Acceso al servidor contable y carpetas financieras. |\n| **VLAN 20** | `Operaciones_Ventas` | `192.168.20.0/24` | Acceso a internet, sistema POS e impresoras. |\n| **VLAN 30** | `Invitados_Celulares` | `192.168.30.0/24` | **Aislada totalmente** de las demás VLANs; ancho de banda limitado. |\n| **VLAN 40** | `Camaras_IoT` | `192.168.40.0/24` | Grabador NVR y cámaras IP bloqueadas hacia la red administrativa. |"
+              }
+            ],
+            "tasks": [
+              {
+                "title": "Dibujar el diagrama de qué puertos de un switch de 8 puertos serían Access y cuáles Trunk para conectar 1 Router, 1 AP Wi-Fi y 4 PCs en dos VLANs",
+                "priority": "HIGH"
+              }
+            ]
+          },
+          {
+            "title": "PoE (Power over Ethernet) y Wi-Fi Corporativo con Controladora (UniFi / Omada)",
+            "description": "Cómo alimentar puntos de acceso Wi-Fi en el techo y cámaras IP por el mismo cable UTP mediante estándares PoE (802.3af/at) y cómo gestionar múltiples antenas con Roaming transparente y varios SSIDs por VLAN.",
+            "orderIndex": 3,
+            "trackType": "THEORY",
+            "priority": "HIGH",
+            "estimatedHours": 4,
+            "completionCriteria": "Explicar por qué los repetidores caseros arruinan la red de una oficina y cómo un Access Point empresarial emite 3 nombres de Wi-Fi (SSIDs) distintos conectados a 3 VLANs por un solo cable PoE.",
+            "studyMaterials": [
+              {
+                "title": "Estándares PoE: 802.3af, 802.3at y PoE Pasivo",
+                "type": "ARTICLE_DOC",
+                "url": "https://help.ui.com/hc/en-us/articles/115000263008-UniFi-PoE-Availability-and-Modes",
+                "authorOrSource": "Ubiquiti Help Center",
+                "status": "TO_CONSUME",
+                "rating": 5,
+                "keyNotes": "Cuidado con mezclar PoE pasivo de 24V con PoE activo estándar de 48V (802.3af/at)."
+              }
+            ],
+            "notes": [
+              {
+                "title": "Wi-Fi Empresarial vs. Repetidores Domésticos",
+                "keyTakeaways": "Cada Access Point (AP) debe ir conectado por cable de red Cat 6 hasta el switch PoE. Con una controladora (UniFi u Omada) un solo plato Wi-Fi emite Wi-Fi Gerencia (VLAN 10) y Wi-Fi Invitados (VLAN 30).",
+                "tags": "wifi, poe, unifi, omada, access-point",
+                "contentMarkdown": "## Reglas de Despliegue Wi-Fi en Oficinas y Bodegas\n\n1. **Cero repetidores inalámbricos:** Los repetidores de enchufe reducen el ancho de banda a la mitad y aumentan la latencia.\n2. **Cableado + PoE:** Se lleva cable UTP Cat 6 desde un **Switch PoE** (o inyector PoE) hasta el techo donde se instala el Access Point (**Ubiquiti UniFi** o **TP-Link Omada**).\n3. **Multi-SSID con VLAN:** El puerto del switch donde se conecta el Access Point se configura como **Trunk**, permitiendo que el Wi-Fi `Empresa_Oficina` caiga en la `VLAN 20` y el Wi-Fi `Empresa_Visitas` caiga aislado en la `VLAN 30`."
+              }
+            ],
+            "tasks": [
+              {
+                "title": "Verificar el consumo en vatios (PoE Budget) que necesitaría un switch para encender 3 Access Points Wi-Fi 6 y 4 cámaras IP",
+                "priority": "MEDIUM"
+              }
+            ]
+          },
+          {
+            "title": "Laboratorio en Cisco Packet Tracer: Crear y aislar VLAN 10 y VLAN 20",
+            "description": "Montaje práctico en el simulador Cisco Packet Tracer con 1 router, 1 switch administrable y 4 computadores divididos en dos departamentos aislados que salen por un enlace Trunk.",
+            "orderIndex": 4,
+            "trackType": "PRACTICE_SIMULTANEOUS",
+            "priority": "HIGH",
+            "estimatedHours": 5,
+            "completionCriteria": "Los equipos de la VLAN 10 se comunican entre sí, los de la VLAN 20 se comunican entre sí, ambos llegan a su puerta de enlace en el router, pero el tráfico entre VLANs está controlado.",
+            "studyMaterials": [
+              {
+                "title": "Descarga oficial de Cisco Packet Tracer",
+                "type": "LAB_SIMULATOR",
+                "url": "https://skillsforall.com/resources/lab-downloads",
+                "authorOrSource": "Cisco Networking Academy",
+                "status": "TO_CONSUME",
+                "rating": 5,
+                "keyNotes": "Requiere cuenta gratuita en Skills For All para descargar el instalador en Windows o Linux."
+              }
+            ],
+            "notes": [
+              {
+                "title": "Comandos base en Packet Tracer para configurar VLANs",
+                "keyTakeaways": "Asignar puertos Access a cada PC y configurar el puerto hacia el router en modo Trunk (Router-on-a-Stick).",
+                "tags": "packet-tracer, laboratorio, vlan, switch, trunk",
+                "contentMarkdown": "## Configuración Rápida en Switch de Packet Tracer\n\n```text\nenable\nconfigure terminal\n\n! Crear las VLANs\nvlan 10\n name CONTABILIDAD\nvlan 20\n name INVITADOS\nexit\n\n! Asignar puerto 1 a VLAN 10 (Modo Access)\ninterface FastEthernet0/1\n switchport mode access\n switchport access vlan 10\n\n! Asignar puerto 24 hacia el Router (Modo Trunk)\ninterface GigabitEthernet0/1\n switchport mode trunk\n```"
+              }
+            ],
+            "tasks": [
+              {
+                "title": "Instalar Cisco Packet Tracer y construir el laboratorio de 1 Switch, 1 Router y 4 PCs divididos en VLAN 10 y VLAN 20",
+                "priority": "HIGH"
+              },
+              {
+                "title": "Comprobar con el comando ping que las subredes están correctamente segmentadas",
+                "priority": "HIGH"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Paso 4: El Cerebro de la Red (Routers Empresariales y Control del Internet)",
+        "orderIndex": 4,
+        "executionMode": "PARALLEL",
+        "parallelNote": "Este paso lo puedes estudiar en paralelo con el Paso 5. Emula gratis un router MikroTik CHR en VirtualBox y conéctate con WinBox para practicar cada configuración sin comprar hardware.",
+        "topics": [
+          {
+            "title": "Módem del ISP en Modo Bridge y Configuración desde cero en MikroTik (WAN, LAN, DHCP, NAT)",
+            "description": "Cómo quitarle la carga de enrutamiento y Wi-Fi al módem de Claro/Movistar/Tigo pasándolo a Modo Puente (Bridge) y cómo levantar desde cero un router MikroTik usando WinBox.",
+            "orderIndex": 1,
+            "trackType": "THEORY",
+            "priority": "HIGH",
+            "estimatedHours": 6,
+            "completionCriteria": "Tomar un router MikroTik sin configuración (Reset with No Default Configuration) y dejarlo entregando internet por LAN con DHCP y NAT Masquerade en menos de 15 minutos.",
+            "studyMaterials": [
+              {
+                "title": "Documentación Oficial de MikroTik RouterOS v7 - First Time Configuration",
+                "type": "ARTICLE_DOC",
+                "url": "https://help.mikrotik.com/docs/display/ROS/First+Time+Configuration",
+                "authorOrSource": "MikroTik Docs",
+                "status": "TO_CONSUME",
+                "rating": 5,
+                "keyNotes": "Guía paso a paso oficial para configurar acceso seguro, Bridge LAN, IP Address, DHCP Server y NAT."
+              }
+            ],
+            "notes": [
+              {
+                "title": "Los 6 Pasos para Configurar un Router MikroTik desde Cero",
+                "keyTakeaways": "1. Crear Bridge LAN -> 2. Meter puertos al Bridge -> 3. Poner IP a WAN (DHCP Client) y a LAN -> 4. Crear DHCP Server en LAN -> 5. Configurar DNS -> 6. Crear regla Firewall NAT Masquerade.",
+                "tags": "mikrotik, routeros, winbox, nat, bridge",
+                "contentMarkdown": "## Comandos equivalentes en Terminal de MikroTik (RouterOS v7)\n\n```routeros\n# 1. Recibir internet del módem ISP en ether1\n/ip dhcp-client add interface=ether1 disabled=no\n\n# 2. Crear puente LAN y asignar dirección IP de puerta de enlace\n/interface bridge add name=bridge-lan\n/interface bridge port add bridge=bridge-lan interface=ether2\n/ip address add address=192.168.88.1/24 interface=bridge-lan\n\n# 3. Configurar DNS con servidores rápidos\n/ip dns set servers=1.1.1.1,8.8.8.8 allow-remote-requests=yes\n\n# 4. Activar NAT (Masquerade) para dar salida a internet a la LAN\n/ip firewall nat add chain=srcnat out-interface=ether1 action=masquerade\n```"
+              }
+            ],
+            "tasks": [
+              {
+                "title": "Completar la configuración inicial desde cero (Sin configuración por defecto) en MikroTik dándole salida a internet a una red LAN",
+                "priority": "HIGH"
+              }
+            ]
+          },
+          {
+            "title": "Control de Ancho de Banda (Simple Queues / QoS) y Reglas de Firewall",
+            "description": "Limitación de velocidad por IP o por VLAN para que descargas pesadas o videos no afecten la facturación ni las llamadas, junto con el aseguramiento del router contra ataques externos.",
+            "orderIndex": 2,
+            "trackType": "THEORY",
+            "priority": "HIGH",
+            "estimatedHours": 5,
+            "completionCriteria": "Asegurar los servicios del router (apagar Telnet/FTP/WWW público), bloquear el tráfico entre la VLAN de invitados y la de administración en el Firewall, y limitar el ancho de banda de una subred con Simple Queues.",
+            "studyMaterials": [
+              {
+                "title": "MikroTik RouterOS - Securing Your Router & Firewall Basics",
+                "type": "ARTICLE_DOC",
+                "url": "https://help.mikrotik.com/docs/display/ROS/Securing+your+router",
+                "authorOrSource": "MikroTik Docs",
+                "status": "TO_CONSUME",
+                "rating": 5,
+                "keyNotes": "Imprescindible: deshabilitar servicios en /ip service y proteger la cadena input del firewall."
+              }
+            ],
+            "notes": [
+              {
+                "title": "Hardening de MikroTik y Bloqueo entre VLANs",
+                "keyTakeaways": "En /ip service apaga telnet, ftp, www y api; cambia el usuario admin; y en /ip firewall filter bloquea el forward entre la red de invitados y la red de gerencia.",
+                "tags": "firewall, qos, queues, seguridad, mikrotik",
+                "contentMarkdown": "## Reglas Clave de Seguridad y Ancho de Banda en MikroTik\n\n```routeros\n# Desactivar servicios inseguros que los bots atacan en internet\n/ip service disable telnet,ftp,www,api,api-ssl\n\n# Limitar toda la red de Invitados (192.168.30.0/24) a 30 Mbps de bajada y 15 Mbps de subida\n/queue simple add name=\"Limite_Invitados\" target=192.168.30.0/24 max-limit=15M/30M\n\n# Bloquear en el Firewall que la red de Invitados vea la red de Contabilidad\n/ip firewall filter add chain=forward src-address=192.168.30.0/24 dst-address=192.168.10.0/24 action=drop comment=\"Aislar Invitados de Contabilidad\"\n```"
+              }
+            ],
+            "tasks": [
+              {
+                "title": "Crear una regla Simple Queue para limitar la velocidad de una subred de pruebas y una regla de Firewall que bloquee el ping entre dos subredes",
+                "priority": "HIGH"
+              }
+            ]
+          },
+          {
+            "title": "Dual WAN y Failover Automático (Doble Proveedor de Internet)",
+            "description": "Configuración de dos proveedores de internet simultáneos en el mismo router empresarial para que, cuando se caiga la fibra óptica principal, toda la empresa conmute al segundo operador en segundos.",
+            "orderIndex": 3,
+            "trackType": "THEORY",
+            "priority": "HIGH",
+            "estimatedHours": 5,
+            "completionCriteria": "Configurar dos rutas por defecto con diferente distancia administrativa (Distance 1 y Distance 2) y monitoreo recursivo (Check Gateway ping) hacia un IP externa como 1.1.1.1 o 8.8.8.8.",
+            "studyMaterials": [
+              {
+                "title": "Failover (WAN Backup) en MikroTik con Rutas Recursivas",
+                "type": "ARTICLE_DOC",
+                "url": "https://help.mikrotik.com/docs/pages/viewpage.action?pageId=26476608",
+                "authorOrSource": "MikroTik Docs",
+                "status": "TO_CONSUME",
+                "rating": 5,
+                "keyNotes": "Usar rutas recursivas para verificar que hay internet real más allá del módem del operador (porque a veces el módem sigue encendido pero sin fibra)."
+              }
+            ],
+            "notes": [
+              {
+                "title": "Por qué usar Failover con Rutas Recursivas",
+                "keyTakeaways": "Si solo vigilas la IP del módem (192.168.1.1), cuando se corte la fibra en la calle el módem sigue respondiendo ping y el Failover no se activa. Debes vigilar una IP en internet como 8.8.8.8.",
+                "tags": "dual-wan, failover, alta-disponibilidad, mikrotik",
+                "contentMarkdown": "## Lógica del Failover Empresarial\n\n- **ISP 1 (Principal - Ej. Fibra Movistar en `ether1`):** Distancia `1`. Se monitorea salida real haciendo `check-gateway=ping` hacia `8.8.8.8`.\n- **ISP 2 (Respaldo - Ej. Claro o Antena LTE en `ether2`):** Distancia `2`. Entra automáticamente en acción en cuanto `8.8.8.8` deja de responder por el ISP 1."
+              }
+            ],
+            "tasks": [
+              {
+                "title": "Simular la desconexión del cable WAN 1 en el laboratorio virtual y comprobar que el tráfico pasa automáticamente por la WAN 2",
+                "priority": "HIGH"
+              }
+            ]
+          },
+          {
+            "title": "Laboratorio en VirtualBox: Emular MikroTik CHR y administrarlo con WinBox",
+            "description": "Instalación gratuita de la imagen MikroTik Cloud Hosted Router (CHR) en VirtualBox con múltiples tarjetas de red virtuales conectadas a una máquina cliente para practicar sin riesgo.",
+            "orderIndex": 4,
+            "trackType": "PRACTICE_SIMULTANEOUS",
+            "priority": "HIGH",
+            "estimatedHours": 5,
+            "completionCriteria": "Tener corriendo en VirtualBox el router MikroTik CHR, conectarse a él desde tu Windows usando WinBox y tener navegando otra máquina virtual Linux/Windows a través de ese MikroTik.",
+            "studyMaterials": [
+              {
+                "title": "Descarga oficial de WinBox y MikroTik CHR ( Imagen VDI / OVA para VirtualBox )",
+                "type": "LAB_SIMULATOR",
+                "url": "https://mikrotik.com/download",
+                "authorOrSource": "MikroTik",
+                "status": "TO_CONSUME",
+                "rating": 5,
+                "keyNotes": "En la sección Cloud Hosted Router (CHR) descargar la imagen VirtualDI (.vdi) para importarla directo en VirtualBox."
+              }
+            ],
+            "notes": [
+              {
+                "title": "Configuración de Tarjetas de Red en VirtualBox para MikroTik CHR",
+                "keyTakeaways": "Adaptador 1 en Modo Puente o NAT (será ether1 - WAN) y Adaptador 2 en Red Interna 'lan-oficina' (será ether2 - LAN).",
+                "tags": "virtualbox, chr, winbox, laboratorio",
+                "contentMarkdown": "## Topología del Laboratorio en VirtualBox\n\n1. **Adaptador 1 de la VM MikroTik:** Conectar a **NAT** o **Adaptador Puente** (simula el cable que viene del proveedor de internet).\n2. **Adaptador 2 de la VM MikroTik:** Conectar a **Red Interna** (nombre: `lan_empresa`).\n3. **Máquina Virtual Cliente (Ubuntu o Windows ligero):** Conectar su tarjeta de red a la misma **Red Interna** (`lan_empresa`) para que reciba IP por DHCP desde tu MikroTik."
+              }
+            ],
+            "tasks": [
+              {
+                "title": "Descargar WinBox y la imagen VDI de MikroTik CHR y levantar la máquina virtual en VirtualBox con 256 MB de RAM",
+                "priority": "HIGH"
+              },
+              {
+                "title": "Entrar por WinBox usando la dirección MAC del router y realizar un backup de la configuración (.backup y .rsc)",
+                "priority": "MEDIUM"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Paso 5: Servidores, Archivos de Oficina y Despliegue de Software",
+        "orderIndex": 5,
+        "executionMode": "PARALLEL",
+        "parallelNote": "Combina la administración del entorno de oficina en Windows (impresoras por IP y carpetas SMB) con el despliegue profesional de servidores en Linux usando SSH, Docker y Proxmox.",
+        "topics": [
+          {
+            "title": "Rama Windows: Impresoras por Puerto TCP/IP Fijo, Scan to SMB, Carpetas Compartidas y RDP",
+            "description": "Solución definitiva a los problemas clásicos de oficina: instalación manual de impresoras apuntando a su IP fija, configuración de escaneo directo a carpeta de red, permisos de archivos SMB por usuario y soporte remoto.",
+            "orderIndex": 1,
+            "trackType": "THEORY",
+            "priority": "HIGH",
+            "estimatedHours": 5,
+            "completionCriteria": "Instalar una impresora de red creando un Puerto TCP/IP Estándar (sin usar puertos WSD que se desconectan) y compartir una carpeta en red con permisos diferenciados de lectura y escritura.",
+            "studyMaterials": [
+              {
+                "title": "Microsoft Learn - File Sharing over a Network in Windows",
+                "type": "ARTICLE_DOC",
+                "url": "https://support.microsoft.com/es-es/windows/uso-compartido-de-archivos-por-red-en-windows-b58704b2-f53a-4b82-7bc1-80f9994725bf",
+                "authorOrSource": "Microsoft Support",
+                "status": "TO_CONSUME",
+                "rating": 4,
+                "keyNotes": "Ver configuración de perfil de red Privado y permisos NTFS combinados con permisos SMB."
+              }
+            ],
+            "notes": [
+              {
+                "title": "Por qué las impresoras de red dejan de imprimir en Windows y cómo evitarlo",
+                "keyTakeaways": "Nunca agregues impresoras con la búsqueda automática (Puerto WSD). Siempre reserva su IP en el router y agrégala por 'Puerto TCP/IP Estándar' desmarcando SNMP si da falso estado Sin Conexión.",
+                "tags": "windows, impresoras, smb, carpetas-compartidas, soporte",
+                "contentMarkdown": "## Regla de Oro para Impresoras y Carpetas en Oficinas\n\n### 1. Impresoras de Red Indestructibles\n1. Fija la IP de la impresora en el DHCP del router (ej. `192.168.1.45`).\n2. En Windows ve a `Panel de Control -> Dispositivos e impresoras -> Agregar impresora -> La impresora que quiero no está en la lista`.\n3. Elige **Agregar una impresora usando una dirección IP** y selecciona tipo de dispositivo **Dispositivo TCP/IP** (nunca *Detección automática* / WSD).\n\n### 2. Acceso a Carpetas Compartidas (SMB)\n- Siempre mapear la unidad de red usando la **IP fija del servidor** (`\\\\192.168.1.20\\Contabilidad`) en lugar del nombre del equipo (`\\\\PC-CONTABILIDAD`), ya que NetBIOS suele fallar cuando hay VLANs o VPNs."
+              }
+            ],
+            "tasks": [
+              {
+                "title": "Compartir una carpeta de prueba en tu red local con usuario y contraseña y conectarla como Unidad de Red (Z:) desde otro equipo o máquina virtual",
+                "priority": "HIGH"
+              }
+            ]
+          },
+          {
+            "title": "Rama Linux Server: Administración por SSH, Permisos, UFW y Servicios con systemd",
+            "description": "Manejo fluido de un servidor Ubuntu Server o Debian sin entorno gráfico: conexión remota segura por SSH, gestión de procesos, firewall UFW, tareas programadas con cron y creación de servicios con systemctl.",
+            "orderIndex": 2,
+            "trackType": "THEORY",
+            "priority": "HIGH",
+            "estimatedHours": 6,
+            "completionCriteria": "Conectarte por SSH con llaves criptográficas a un servidor Linux, configurar el firewall UFW permitiendo solo los puertos necesarios y diagnosticar uso de disco, RAM y CPU por consola.",
+            "studyMaterials": [
+              {
+                "title": "Initial Server Setup with Ubuntu Server",
+                "type": "ARTICLE_DOC",
+                "url": "https://www.digitalocean.com/community/tutorials/initial-server-setup-with-ubuntu",
+                "authorOrSource": "DigitalOcean Tutorials",
+                "status": "TO_CONSUME",
+                "rating": 5,
+                "keyNotes": "Guía estándar de creación de usuario sudo, configuración de llaves SSH y activación de UFW."
+              }
+            ],
+            "notes": [
+              {
+                "title": "Cheatsheet de Supervivencia en Linux Server",
+                "keyTakeaways": "htop (CPU/RAM), df -h (espacio en disco), ss -tulpn (puertos en uso), journalctl -u servicio -f (logs en vivo), ufw status (firewall).",
+                "tags": "linux, ubuntu, ssh, systemd, ufw, sysadmin",
+                "contentMarkdown": "## Comandos Diarios de Administración en Ubuntu/Debian\n\n```bash\n# Ver uso de espacio en discos en formato legible\ndf -h\n\n# Ver qué carpeta está llenando el disco\ndu -sh /* 2>/dev/null | sort -hr | head -n 10\n\n# Ver qué programas están escuchando en qué puertos TCP/UDP\nss -tulpn\n\n# Administrar servicios del sistema (ej. nginx, docker, postgresql)\nsudo systemctl status docker\nsudo systemctl restart nginx\nsudo journalctl -u nginx -f\n\n# Configurar Firewall UFW rápido y seguro\nsudo ufw default deny incoming\nsudo ufw allow 22/tcp\nsudo ufw allow 80,443/tcp\nsudo ufw enable\n```"
+              }
+            ],
+            "tasks": [
+              {
+                "title": "Generar un par de llaves SSH (ssh-keygen) en tu PC y configurar acceso sin contraseña hacia tu servidor Linux de pruebas",
+                "priority": "HIGH"
+              }
+            ]
+          },
+          {
+            "title": "Despliegue con Docker, Docker Compose y Reverse Proxy (Nginx Proxy Manager / Caddy)",
+            "description": "Empaquetado y despliegue limpio de aplicaciones web, bases de datos y herramientas empresariales usando contenedores Docker y enrutamiento por dominios con certificados HTTPS automáticos.",
+            "orderIndex": 3,
+            "trackType": "THEORY",
+            "priority": "HIGH",
+            "estimatedHours": 7,
+            "completionCriteria": "Levantar un stack multicontenedor con docker-compose.yml (con volúmenes persistentes y red interna) y exponerlo detrás de un Reverse Proxy con SSL.",
+            "studyMaterials": [
+              {
+                "title": "Docker Compose Quickstart - Documentación Oficial",
+                "type": "ARTICLE_DOC",
+                "url": "https://docs.docker.com/compose/gettingstarted/",
+                "authorOrSource": "Docker Docs",
+                "status": "TO_CONSUME",
+                "rating": 5,
+                "keyNotes": "Enfocarse en persistencia de datos con volúmenes (volumes), variables de entorno (.env) y política restart: unless-stopped."
+              },
+              {
+                "title": "Nginx Proxy Manager - Guía Oficial de Instalación",
+                "type": "ARTICLE_DOC",
+                "url": "https://nginxproxymanager.com/guide/",
+                "authorOrSource": "Nginx Proxy Manager",
+                "status": "TO_CONSUME",
+                "rating": 5,
+                "keyNotes": "Permite gestionar subdominios y certificados Let's Encrypt desde una interfaz web limpia en el puerto 81."
+              }
+            ],
+            "notes": [
+              {
+                "title": "Plantilla Base de Docker Compose para Producción Local",
+                "keyTakeaways": "Siempre usar restart: unless-stopped y mapear volúmenes para las bases de datos para nunca perder información al recrear el contenedor.",
+                "tags": "docker, docker-compose, nginx, reverse-proxy, despliegue",
+                "contentMarkdown": "## Comandos Esenciales de Docker Compose\n\n```bash\n# Levantar los servicios en segundo plano\ndocker compose up -d\n\n# Ver estado y puertos de los contenedores activos\ndocker compose ps\n\n# Ver los logs en tiempo real de un contenedor\ndocker compose logs -f app\n```\n\n## Estructura de `docker-compose.yml` con Reverse Proxy\n```yaml\nservices:\n  npm:\n    image: 'jc21/nginx-proxy-manager:latest'\n    restart: unless-stopped\n    ports:\n      - '80:80'\n      - '81:81'\n      - '443:443'\n    volumes:\n      - ./data:/data\n      - ./letsencrypt:/etc/letsencrypt\n```"
+              }
+            ],
+            "tasks": [
+              {
+                "title": "Escribir un archivo docker-compose.yml que levante una base de datos PostgreSQL y un contenedor web con volúmenes persistentes",
+                "priority": "HIGH"
+              }
+            ]
+          },
+          {
+            "title": "Virtualización de Servidores con Proxmox VE (Máquinas Virtuales, LXC y Snapshots)",
+            "description": "Transformación de un computador o servidor físico de la empresa en un hipervisor Tipo 1 con Proxmox VE para ejecutar simultáneamente un Windows Server contable, un servidor Linux con Docker y un router virtual.",
+            "orderIndex": 4,
+            "trackType": "THEORY",
+            "priority": "MEDIUM",
+            "estimatedHours": 6,
+            "completionCriteria": "Entender cómo funciona el almacenamiento en Proxmox, la diferencia entre una Máquina Virtual completa (KVM) y un Contenedor ligero (LXC), y cómo tomar un Snapshot antes de una actualización crítica.",
+            "studyMaterials": [
+              {
+                "title": "Proxmox VE Administration Guide",
+                "type": "ARTICLE_DOC",
+                "url": "https://pve.proxmox.com/pve-docs/",
+                "authorOrSource": "Proxmox Server Solutions",
+                "status": "TO_CONSUME",
+                "rating": 5,
+                "keyNotes": "Revisar capítulos de instalación, puentes de red (vmbr0), Snapshots y programación de Backups automáticos (vzdump)."
+              }
+            ],
+            "notes": [
+              {
+                "title": "Ventajas de Proxmox VE en una Empresa Pequeña o Mediana",
+                "keyTakeaways": "Antes de tocar o actualizar cualquier sistema contable o ERP, toma un Snapshot en Proxmox (tarda 3 segundos). Si algo falla, restauras el servidor al estado exacto anterior en 1 clic.",
+                "tags": "proxmox, virtualizacion, kvm, lxc, servidores",
+                "contentMarkdown": "## Arquitectura Ideal de un Servidor Físico con Proxmox VE\n\nSobre un único equipo físico (ej. Core i5/i7 o Xeon con 16 GB - 32 GB de RAM y discos SSD en espejo) se instalan máquinas independientes:\n\n1. **VM 100 (Windows Server / Windows Pro):** Exclusiva para el software contable local o servidor de impresión.\n2. **VM 101 (Ubuntu Server + Docker):** Donde corren tus plataformas web propias, bases de datos, bots de WhatsApp y Nginx Proxy Manager.\n3. **LXC 102 (Contenedor ligero Linux):** Para monitoreo con Uptime Kuma y DNS interno (AdGuard Home / Pi-hole)."
+              }
+            ],
+            "tasks": [
+              {
+                "title": "Probar la instalación de Proxmox VE en una máquina virtual o en un PC secundario y crear tu primer Snapshot de prueba",
+                "priority": "MEDIUM"
+              }
+            ]
+          },
+          {
+            "title": "Laboratorio Integrado: Servidor Ubuntu Server con SSH y Docker en tu Red Local",
+            "description": "Instalación práctica de Ubuntu Server en VirtualBox (en modo Adaptador Puente o detrás de tu MikroTik), acceso desde la terminal de Windows por SSH y despliegue de un servicio web real en Docker.",
+            "orderIndex": 5,
+            "trackType": "PRACTICE_SIMULTANEOUS",
+            "priority": "HIGH",
+            "estimatedHours": 5,
+            "completionCriteria": "Desde el navegador de tu computador principal o celular en la misma red, abrir una aplicación web que está corriendo dentro de Docker en tu máquina virtual Ubuntu Server.",
+            "studyMaterials": [],
+            "notes": [],
+            "tasks": [
+              {
+                "title": "Instalar Ubuntu Server en VirtualBox, conectarte por SSH desde la terminal de Windows e instalar Docker y Docker Compose",
+                "priority": "HIGH"
+              },
+              {
+                "title": "Desplegar una aplicación web en Docker y acceder a ella desde el navegador usando la IP privada del servidor",
+                "priority": "HIGH"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "title": "Paso 6: Acceso desde fuera de la oficina, Copias de Seguridad y Energía",
+        "orderIndex": 6,
+        "executionMode": "SEQUENTIAL",
+        "parallelNote": "Instala Tailscale en tu PC y en tu celular para probar el acceso remoto por datos móviles (4G/5G), y despliega Uptime Kuma en Docker para recibir alertas de caídas en tiempo real.",
+        "topics": [
+          {
+            "title": "VPNs Zero-Trust (Tailscale / ZeroTier) y Cloudflare Tunnels para saltar el CG-NAT",
+            "description": "Cómo entrar a los servidores, escritorios remotos o carpetas de la empresa desde cualquier lugar sin abrir puertos y cómo publicar sistemas web locales en un dominio propio con HTTPS sin tener IP pública fija.",
+            "orderIndex": 1,
+            "trackType": "THEORY",
+            "priority": "HIGH",
+            "estimatedHours": 5,
+            "completionCriteria": "Diferenciar cuándo usar Tailscale (acceso privado para ti o empleados autorizados a servidores/RDP/SMB) y cuándo usar Cloudflare Tunnels (publicar una web o API al público general sin abrir puertos).",
+            "studyMaterials": [
+              {
+                "title": "Tailscale Quickstart & Subnet Routers",
+                "type": "ARTICLE_DOC",
+                "url": "https://tailscale.com/kb/1017/install",
+                "authorOrSource": "Tailscale Docs",
+                "status": "TO_CONSUME",
+                "rating": 5,
+                "keyNotes": "Revisar la función 'Subnet Router' (permite acceder a impresoras o routers de toda la oficina instalando Tailscale en un solo servidor)."
+              },
+              {
+                "title": "Cloudflare Zero Trust - Create a locally-managed tunnel (cloudflared)",
+                "type": "ARTICLE_DOC",
+                "url": "https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/get-started/",
+                "authorOrSource": "Cloudflare Docs",
+                "status": "TO_CONSUME",
+                "rating": 5,
+                "keyNotes": "Permite conectar un contenedor Docker local a un subdominio (ej. sistema.miempresa.com.co) con SSL automático sin tocar el módem del ISP."
+              }
+            ],
+            "notes": [
+              {
+                "title": "Tailscale vs. Cloudflare Tunnels: La Solución Definitiva al CG-NAT",
+                "keyTakeaways": "Tailscale = VPN privada sobre WireGuard para administración, SSH, RDP y carpetas SMB. Cloudflare Tunnel = Exponer una app web local hacia un dominio público con HTTPS sin abrir puertos.",
+                "tags": "tailscale, cloudflare-tunnels, vpn, wireguard, cgnat",
+                "contentMarkdown": "## Comandos Rápidos para Conectar un Servidor Linux con Tailscale\n\n```bash\n# Instalar Tailscale en Ubuntu/Debian en un solo paso\ncurl -fsSL [https://tailscale.com/install.sh](https://tailscale.com/install.sh) | sh\n\n# Iniciar y obtener el enlace de autenticación\nsudo tailscale up\n\n# Ver la IP privada permanente de Tailscale (100.x.y.z)\ntailscale ip -4\n```\n\n> **Truco Pro (Subnet Router):** Si ejecutas `sudo tailscale up --advertise-routes=192.168.1.0/24` en el servidor de la oficina, podrás entrar desde tu casa incluso a la IP local del router MikroTik (`192.168.1.1`) o a las cámaras que no tienen Tailscale instalado."
+              }
+            ],
+            "tasks": [
+              {
+                "title": "Configurar un túnel de prueba con Cloudflare Tunnels o Tailscale Funnel para exponer un puerto local de desarrollo",
+                "priority": "MEDIUM"
+              }
+            ]
+          },
+          {
+            "title": "Copias de Seguridad Automatizadas (Regla 3-2-1 con Rclone, Restic o Cobian Reflector)",
+            "description": "Diseño e implementación de copias de seguridad desatendidas de bases de datos PostgreSQL/MySQL y carpetas administrativas hacia almacenamiento local secundario y hacia la nube cifrada.",
+            "orderIndex": 2,
+            "trackType": "THEORY",
+            "priority": "HIGH",
+            "estimatedHours": 5,
+            "completionCriteria": "Programar un script automatizado con cron (en Linux) o Cobian Reflector (en Windows) que genere el dump comprimido de una base de datos y lo suba automáticamente a la nube.",
+            "studyMaterials": [
+              {
+                "title": "Rclone - Sincronización de archivos y backups con más de 40 nubes",
+                "type": "ARTICLE_DOC",
+                "url": "https://rclone.org/docs/",
+                "authorOrSource": "Rclone.org",
+                "status": "TO_CONSUME",
+                "rating": 5,
+                "keyNotes": "Ideal para enviar backups comprimidos en la madrugada hacia Google Drive, AWS S3 o Backblaze B2."
+              },
+              {
+                "title": "Cobian Reflector - Respaldo automático en entornos Windows",
+                "type": "ARTICLE_DOC",
+                "url": "https://www.cobiansoft.com/cobianbackup.html",
+                "authorOrSource": "CobianSoft",
+                "status": "TO_CONSUME",
+                "rating": 5,
+                "keyNotes": "El estándar gratuito en empresas con Windows para respaldar carpetas compartidas y bases de datos contables con copias incrementales y Shadow Copy (VSS)."
+              }
+            ],
+            "notes": [
+              {
+                "title": "Regla 3-2-1 y Script de Backup Automático de Base de Datos",
+                "keyTakeaways": "3 copias de los datos, en 2 discos distintos, y 1 copia fuera de la oficina (nube). Un backup que nunca has probado restaurar no es un backup.",
+                "tags": "backups, rclone, postgresql, cron, seguridad",
+                "contentMarkdown": "## Script de Backup Nocturno para PostgreSQL + Subida a la Nube con Rclone\n\n```bash\n#!/bin/bash\nFECHA=$(date +\"\\%Y-\\%m-\\%d_\\%H\\%M\")\nARCHIVO=\"/backups/db_empresa_$FECHA.sql.gz\"\n\n# 1. Extraer y comprimir la base de datos de producción\ndocker exec -t postgres_db pg_dump -U postgres mi_base_datos | gzip > $ARCHIVO\n\n# 2. Subir copia a Google Drive / S3 configurado en rclone\nrclone copy $ARCHIVO nube_remota:Backups_Empresa/DB/\n\n# 3. Borrar copias locales de más de 14 días para no llenar el disco\nfind /backups/ -type f -name \"*.sql.gz\" -mtime +14 -delete\n```\n\nProgramar en `crontab -e` para que se ejecute todos los días a las 2:00 AM:\n```cron\n0 2 * * * /usr/local/bin/backup_db.sh\n```"
+              }
+            ],
+            "tasks": [
+              {
+                "title": "Crear un script de backup de una base de datos de prueba, comprimirlo y hacer el ejercicio completo de restaurarlo en una base de datos vacía",
+                "priority": "HIGH"
+              }
+            ]
+          },
+          {
+            "title": "Monitoreo con Alertas al Celular (Uptime Kuma) y Dimensionamiento de UPS",
+            "description": "Vigilancia automática 24/7 de páginas web, servidores, bases de datos e impresoras con alertas por Telegram/WhatsApp, y selección técnica de sistemas de respaldo eléctrico (UPS Interactiva vs. UPS Online).",
+            "orderIndex": 3,
+            "trackType": "THEORY",
+            "priority": "MEDIUM",
+            "estimatedHours": 4,
+            "completionCriteria": "Tener Uptime Kuma enviando alertas en vivo a tu Telegram cuando se apaga un servicio y saber calcular de cuántos VA (Voltiamperios) y vatios debe ser una UPS para un rack de comunicaciones.",
+            "studyMaterials": [
+              {
+                "title": "Uptime Kuma - Self-hosted Monitoring Tool",
+                "type": "REPO_CODE",
+                "url": "https://github.com/louislam/uptime-kuma",
+                "authorOrSource": "Louis Lam (GitHub)",
+                "status": "TO_CONSUME",
+                "rating": 5,
+                "keyNotes": "Se despliega con un solo comando de Docker y permite monitorear HTTP(s), Ping, Puertos TCP, DNS y certificados SSL próximos a vencer."
+              }
+            ],
+            "notes": [
+              {
+                "title": "Cómo elegir una UPS (Batería de Respaldo) y Desplegar Uptime Kuma",
+                "keyTakeaways": "UPS Interactiva = Para PCs de empleados (tiempo de transferencia 4-8ms). UPS Online Doble Conversión = Obligatoria para servidores críticos y zonas con bajones fuertes de energía (0ms de transferencia).",
+                "tags": "uptime-kuma, monitoreo, ups, energia, continuidad",
+                "contentMarkdown": "## Despliegue de Uptime Kuma en 30 Segundos\n\n```bash\ndocker run -d --restart=always -p 3001:3001 -v uptime-kuma:/app/data --name uptime-kuma louislam/uptime-kuma:1\n```\n\n## Cálculo Rápido de UPS para el Rack de Red\n- Un módem ISP + Router MikroTik + Switch + Mini-Servidor consumen alrededor de **80W a 150W** en total.\n- Con una UPS de **1000 VA / 600W** dedicada únicamente al rack de red y al servidor, el internet y los sistemas pueden seguir encendidos entre **35 y 60 minutos** durante un apagón."
+              }
+            ],
+            "tasks": [
+              {
+                "title": "Calcular el consumo eléctrico aproximado de tu estación de trabajo + módem de internet para determinar qué capacidad de UPS (en VA y Watts) requerirías",
+                "priority": "LOW"
+              }
+            ]
+          },
+          {
+            "title": "Laboratorio Final: Acceso Remoto desde Datos Móviles con Tailscale y Alertas en Uptime Kuma",
+            "description": "Prueba de fuego de fin de ruta: desconectar el celular del Wi-Fi de la casa (dejándolo en 4G/5G), conectarse por Tailscale al servidor local y recibir una alerta en el celular al detener un contenedor vigilado por Uptime Kuma.",
+            "orderIndex": 4,
+            "trackType": "PRACTICE_SIMULTANEOUS",
+            "priority": "HIGH",
+            "estimatedHours": 4,
+            "completionCriteria": "Acceder exitosamente a tu servidor local desde el celular usando datos móviles (saltando el CG-NAT del operador) y recibir la notificación instantánea de caída y recuperación en Telegram desde Uptime Kuma.",
+            "studyMaterials": [],
+            "notes": [],
+            "tasks": [
+              {
+                "title": "Instalar Tailscale en tu servidor/PC y en tu celular, apagar el Wi-Fi del celular y abrir tu aplicación local usando la IP 100.x.y.z de Tailscale",
+                "priority": "HIGH"
+              },
+              {
+                "title": "Levantar Uptime Kuma en Docker, vincular un Bot de Telegram y probar que te llega el mensaje cuando apagas un contenedor web",
+                "priority": "HIGH"
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "objectives": [
+      {
+        "title": "Dominar el diagnóstico de redes LAN/WAN, DNS y detección de CG-NAT en consola en menos de 5 minutos",
+        "progressPercentage": 0,
+        "status": "ACTIVE"
+      },
+      {
+        "title": "Diseñar y simular una red empresarial segmentada por VLANs (Administración, Ventas e Invitados) en Packet Tracer",
+        "progressPercentage": 0,
+        "status": "ACTIVE"
+      },
+      {
+        "title": "Configurar desde cero un router MikroTik virtual con control de ancho de banda, Firewall y Failover Dual WAN",
+        "progressPercentage": 0,
+        "status": "ACTIVE"
+      },
+      {
+        "title": "Desplegar un servidor Linux con Docker, Reverse Proxy, acceso remoto con Tailscale, backups automáticos y monitoreo con Uptime Kuma",
+        "progressPercentage": 0,
+        "status": "ACTIVE"
+      }
+    ]
+  }
+}
