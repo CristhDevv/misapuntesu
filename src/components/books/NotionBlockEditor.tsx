@@ -805,7 +805,7 @@ export function NotionBlockEditor({
       if (container && onPageOverflow && index === blocks.length - 1) {
         const containerRect = container.getBoundingClientRect();
         const targetRect = target.getBoundingClientRect();
-        const isAtBottom = targetRect.bottom >= containerRect.bottom - 45;
+        const isAtBottom = targetRect.bottom >= containerRect.bottom - 16;
 
         if (isAtBottom) {
           onPageOverflow();
@@ -1042,17 +1042,17 @@ export function NotionBlockEditor({
       data-notion-editor="true"
       data-page-id={pageId}
       onMouseMove={handleEditorMouseMove}
-      className={`relative w-full max-w-3xl mx-auto py-1 h-full flex flex-col justify-start transition-colors duration-200 ${fontFamilyClass} ${fontSizeClass} ${lineHeightClass}`}
+      className={`relative w-full py-0.5 h-full flex flex-col justify-start transition-colors duration-200 ${fontFamilyClass} ${fontSizeClass} ${lineHeightClass}`}
     >
-      {/* Auto-save status indicator */}
+      {/* Auto-save status indicator flotante para no ocupar altura útil de texto */}
       {!readOnly && (
-        <div className="flex items-center justify-end mb-1 pr-1 shrink-0">
+        <div className="absolute top-0 right-0 z-10 pointer-events-none">
           <span
             className={`text-[10px] font-medium tracking-tight px-1.5 py-0.5 rounded-full transition-all duration-300 ${
               savingStatus === "saving"
                 ? "bg-amber-100 text-amber-800"
                 : savingStatus === "saved"
-                ? "text-stone-400 opacity-60"
+                ? "text-stone-400 opacity-50"
                 : savingStatus === "offline_saved"
                 ? "bg-emerald-50 text-emerald-700 font-semibold border border-emerald-200/50"
                 : "bg-red-50 text-red-600"
@@ -1071,7 +1071,7 @@ export function NotionBlockEditor({
 
       {/* Blocks List */}
       <div
-        className="space-y-1 flex-1 min-h-0 w-full cursor-text"
+        className="space-y-0.5 flex-1 min-h-0 w-full cursor-text"
         onClick={(e) => {
           if (e.target === e.currentTarget && blocks.length > 0) {
             const lastBlock = blocks[blocks.length - 1];
@@ -1113,7 +1113,7 @@ export function NotionBlockEditor({
           return (
             <div
               key={block.id}
-              className="group relative flex items-start gap-1 rounded-lg transition-colors py-0.5"
+              className="group relative flex items-start gap-1 rounded-lg transition-colors py-0"
             >
               {/* Margin Controls: Floating Add Button & Handle */}
               {!readOnly && (

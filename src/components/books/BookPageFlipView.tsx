@@ -407,9 +407,9 @@ export function BookPageFlipView({ book }: BookPageFlipViewProps) {
   }[customization.lineHeight];
 
   const marginClasses = {
-    narrow: "px-2.5 sm:px-6 py-2 sm:py-4",
-    normal: "px-3.5 sm:px-8 py-2.5 sm:py-5",
-    wide: "px-5 sm:px-12 py-3 sm:py-6",
+    narrow: "px-2 sm:px-4 py-1.5 sm:py-2.5",
+    normal: "px-3 sm:px-6 py-2 sm:py-3.5",
+    wide: "px-4 sm:px-9 py-2.5 sm:py-5",
   }[customization.pageMargins];
 
   const themeMode = customization.paperTexture === "dark" ? "dark" : customization.paperTexture === "sepia" ? "sepia" : "light";
@@ -524,13 +524,13 @@ export function BookPageFlipView({ book }: BookPageFlipViewProps) {
       <main className="flex-1 min-h-0 w-full flex flex-col items-center justify-center p-1 sm:p-3 overflow-hidden relative">
         {/* Container con Perspectiva 3D */}
         <div
-          className="relative w-full max-w-5xl h-full max-h-full flex-1 min-h-0 flex flex-col items-center justify-center overflow-hidden transition-all duration-500"
+          className="relative w-full max-w-7xl h-full max-h-full flex-1 min-h-0 flex flex-col items-center justify-center overflow-hidden transition-all duration-500"
           style={{ perspective: "2200px" }}
         >
           {/* Libro Abierto / Hoja */}
           <div
             className={`relative w-full h-full max-h-full rounded-2xl shadow-xl transition-all duration-300 border border-black/10 dark:border-white/10 overflow-hidden flex-1 min-h-0 flex ${
-              isSpread ? "grid grid-cols-1 md:grid-cols-2" : "max-w-3xl mx-auto flex-col"
+              isSpread ? "grid grid-cols-1 md:grid-cols-2" : "max-w-4xl mx-auto flex-col"
             }`}
             style={{
               transformStyle: "preserve-3d",
