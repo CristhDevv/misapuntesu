@@ -214,6 +214,125 @@ export function BookPageFlipView({ book }: BookPageFlipViewProps) {
     ]
   );
 
+  // Retroceso físico a la página anterior cuando el usuario presiona Borrar (Backspace) al inicio
+  const handlePageUnderflow = useCallback(
+    (fromPageId: string, isEmptyPage: boolean) => {
+      if (isSpread) {
+        if (rightPage && fromPageId === rightPage.id) {
+          // Si estamos en la hoja derecha:
+          if (isEmptyPage && totalPages > 1) {
+            startTransition(async () => {
+              await deleteBookPageAction(fromPageId);
+              router.refresh();
+              setTimeout(() => {
+                const textareas = document.querySelectorAll(
+                  `[data-page-id="${leftPage?.id}"] textarea`
+                );
+                const lastEl = textareas[textareas.length - 1] as HTMLTextAreaElement | null;
+                if (lastEl) {
+                  lastEl.focus();
+                  lastEl.setSelectionRange(lastEl.value.length, lastEl.value.length);
+                }
+              }, 300);
+            });
+            return;
+          }
+
+          // Si no está vacía, solo devolver el foco al final de la hoja izquierda
+          if (leftPage) {
+            const leftTextareas = document.querySelectorAll(
+              `[data-page-id="${leftPage.id}"] textarea`
+            );
+            const lastEl = leftTextareas[leftTextareas.length - 1] as HTMLTextAreaElement | null;
+            if (lastEl) {
+              lastEl.focus();
+              lastEl.setSelectionRange(lastEl.value.length, lastEl.value.length);
+            }
+          }
+          return;
+        }
+
+        // Si estamos en la hoja izquierda:
+        if (spreadLeftIndex > 0) {
+          if (isEmptyPage && totalPages > 1) {
+            startTransition(async () => {
+              await deleteBookPageAction(fromPageId);
+              router.refresh();
+              setCurrentPageIndex((prev) => Math.max(0, prev - 2));
+              setTimeout(() => {
+                const textareas = document.querySelectorAll(
+                  `[data-notion-editor="true"] textarea`
+                );
+                const lastEl = textareas[textareas.length - 1] as HTMLTextAreaElement | null;
+                if (lastEl) {
+                  lastEl.focus();
+                  lastEl.setSelectionRange(lastEl.value.length, lastEl.value.length);
+                }
+              }, 380);
+            });
+            return;
+          }
+
+          handlePrevPage();
+          setTimeout(() => {
+            const textareas = document.querySelectorAll(
+              `[data-notion-editor="true"] textarea`
+            );
+            const lastEl = textareas[textareas.length - 1] as HTMLTextAreaElement | null;
+            if (lastEl) {
+              lastEl.focus();
+              lastEl.setSelectionRange(lastEl.value.length, lastEl.value.length);
+            }
+          }, 380);
+        }
+      } else {
+        // Modo página simple (móvil o vertical)
+        if (currentPageIndex > 0) {
+          if (isEmptyPage && totalPages > 1) {
+            startTransition(async () => {
+              await deleteBookPageAction(fromPageId);
+              router.refresh();
+              setCurrentPageIndex((prev) => Math.max(0, prev - 1));
+              setTimeout(() => {
+                const textareas = document.querySelectorAll(
+                  `[data-notion-editor="true"] textarea`
+                );
+                const lastEl = textareas[textareas.length - 1] as HTMLTextAreaElement | null;
+                if (lastEl) {
+                  lastEl.focus();
+                  lastEl.setSelectionRange(lastEl.value.length, lastEl.value.length);
+                }
+              }, 380);
+            });
+            return;
+          }
+
+          handlePrevPage();
+          setTimeout(() => {
+            const textareas = document.querySelectorAll(
+              `[data-notion-editor="true"] textarea`
+            );
+            const lastEl = textareas[textareas.length - 1] as HTMLTextAreaElement | null;
+            if (lastEl) {
+              lastEl.focus();
+              lastEl.setSelectionRange(lastEl.value.length, lastEl.value.length);
+            }
+          }, 380);
+        }
+      }
+    },
+    [
+      isSpread,
+      leftPage,
+      rightPage,
+      totalPages,
+      spreadLeftIndex,
+      currentPageIndex,
+      handlePrevPage,
+      router,
+    ]
+  );
+
   // Toggle bookmark action
   const handleToggleBookmark = (pageId: string) => {
     startTransition(async () => {
@@ -459,6 +578,7 @@ export function BookPageFlipView({ book }: BookPageFlipViewProps) {
                     initialBlocks={parseBlocks(leftPage.blocksJson)}
                     onSave={(blocks) => handleSaveBlocks(leftPage.id, blocks)}
                     onPageOverflow={() => handlePageOverflow(leftPage.id)}
+                    onPageUnderflow={(isEmpty) => handlePageUnderflow(leftPage.id, isEmpty)}
                     fontFamilyClass={fontFamilyClasses}
                     fontSizeClass={fontSizeClasses}
                     lineHeightClass={lineHeightClasses}
@@ -497,6 +617,7 @@ export function BookPageFlipView({ book }: BookPageFlipViewProps) {
                         initialBlocks={parseBlocks(rightPage.blocksJson)}
                         onSave={(blocks) => handleSaveBlocks(rightPage.id, blocks)}
                         onPageOverflow={() => handlePageOverflow(rightPage.id)}
+                        onPageUnderflow={(isEmpty) => handlePageUnderflow(rightPage.id, isEmpty)}
                         fontFamilyClass={fontFamilyClasses}
                         fontSizeClass={fontSizeClasses}
                         lineHeightClass={lineHeightClasses}

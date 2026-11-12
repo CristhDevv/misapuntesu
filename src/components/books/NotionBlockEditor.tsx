@@ -39,6 +39,7 @@ interface NotionBlockEditorProps {
   pageId: string;
   onSave: (blocks: NotionBlock[]) => Promise<void>;
   onPageOverflow?: () => void;
+  onPageUnderflow?: (isEmptyPage: boolean) => void;
   readOnly?: boolean;
   fontFamilyClass?: string;
   fontSizeClass?: string;
@@ -98,6 +99,7 @@ export function NotionBlockEditor({
   pageId,
   onSave,
   onPageOverflow,
+  onPageUnderflow,
   readOnly = false,
   fontFamilyClass = "font-sans",
   fontSizeClass = "text-base",
@@ -322,21 +324,47 @@ export function NotionBlockEditor({
     }
   };
 
-  const applyInlineFormat = (prefix: string, suffix: string = prefix) => {
-    if (!floatingToolbar) return;
-    const { blockId, selectionStart, selectionEnd, selectedText } = floatingToolbar;
+  const executeInlineFormat = (
+    blockId: string,
+    prefix: string,
+    suffix: string = prefix,
+    customStart?: number,
+    customEnd?: number
+  ) => {
+    const el = textareaRefs.current.get(blockId);
+    const start = customStart ?? (floatingToolbar?.blockId === blockId ? floatingToolbar.selectionStart : el?.selectionStart ?? 0);
+    const end = customEnd ?? (floatingToolbar?.blockId === blockId ? floatingToolbar.selectionEnd : el?.selectionEnd ?? 0);
 
     setBlocks((prev) => {
       const next = prev.map((b) => {
         if (b.id !== blockId) return b;
         const content = b.content;
-        const before = content.slice(0, selectionStart);
-        const after = content.slice(selectionEnd);
+        const before = content.slice(0, start);
+        const selectedText = content.slice(start, end);
+        const after = content.slice(end);
 
         const prefixLen = prefix.length;
         const suffixLen = suffix.length;
-        const hasPrefixBefore = before.endsWith(prefix);
-        const hasSuffixAfter = after.startsWith(suffix);
+
+        const hasPrefixBefore =
+          prefix === "*"
+            ? before.endsWith("*") && !before.endsWith("**")
+            : before.endsWith(prefix);
+        const hasSuffixAfter =
+          suffix === "*"
+            ? after.startsWith("*") && !after.startsWith("**")
+            : after.startsWith(suffix);
+
+        const isAlreadyWrapped =
+          prefix === "*"
+            ? selectedText.startsWith("*") &&
+              !selectedText.startsWith("**") &&
+              selectedText.endsWith("*") &&
+              !selectedText.endsWith("**") &&
+              selectedText.length >= 2
+            : selectedText.startsWith(prefix) &&
+              selectedText.endsWith(suffix) &&
+              selectedText.length >= prefixLen + suffixLen;
 
         let newContent: string;
         let newStart: number;
@@ -344,30 +372,31 @@ export function NotionBlockEditor({
 
         if (hasPrefixBefore && hasSuffixAfter) {
           newContent = before.slice(0, -prefixLen) + selectedText + after.slice(suffixLen);
-          newStart = selectionStart - prefixLen;
+          newStart = start - prefixLen;
           newEnd = newStart + selectedText.length;
-        } else if (
-          selectedText.startsWith(prefix) &&
-          selectedText.endsWith(suffix) &&
-          selectedText.length >= prefixLen + suffixLen
-        ) {
+        } else if (isAlreadyWrapped) {
           const unwrapped = selectedText.slice(prefixLen, -suffixLen);
           newContent = before + unwrapped + after;
-          newStart = selectionStart;
+          newStart = start;
           newEnd = newStart + unwrapped.length;
+        } else if (selectedText.length === 0) {
+          const formatted = `${prefix}${suffix}`;
+          newContent = before + formatted + after;
+          newStart = start + prefixLen;
+          newEnd = newStart;
         } else {
           const formatted = `${prefix}${selectedText}${suffix}`;
           newContent = before + formatted + after;
-          newStart = selectionStart;
-          newEnd = selectionStart + formatted.length;
+          newStart = start;
+          newEnd = start + formatted.length;
         }
 
         setTimeout(() => {
-          const el = textareaRefs.current.get(blockId);
-          if (el) {
-            el.focus();
-            el.setSelectionRange(newStart, newEnd);
-            autoResize(el);
+          const targetEl = textareaRefs.current.get(blockId);
+          if (targetEl) {
+            targetEl.focus();
+            targetEl.setSelectionRange(newStart, newEnd);
+            autoResize(targetEl);
           }
         }, 30);
 
@@ -383,16 +412,24 @@ export function NotionBlockEditor({
     setActiveSubmenu(null);
   };
 
-  const applyHtmlWrap = (openTag: string, closeTag: string) => {
-    if (!floatingToolbar) return;
-    const { blockId, selectionStart, selectionEnd, selectedText } = floatingToolbar;
+  const executeHtmlWrap = (
+    blockId: string,
+    openTag: string,
+    closeTag: string,
+    customStart?: number,
+    customEnd?: number
+  ) => {
+    const el = textareaRefs.current.get(blockId);
+    const start = customStart ?? (floatingToolbar?.blockId === blockId ? floatingToolbar.selectionStart : el?.selectionStart ?? 0);
+    const end = customEnd ?? (floatingToolbar?.blockId === blockId ? floatingToolbar.selectionEnd : el?.selectionEnd ?? 0);
 
     setBlocks((prev) => {
       const next = prev.map((b) => {
         if (b.id !== blockId) return b;
         const content = b.content;
-        const before = content.slice(0, selectionStart);
-        const after = content.slice(selectionEnd);
+        const before = content.slice(0, start);
+        const selectedText = content.slice(start, end);
+        const after = content.slice(end);
 
         let newContent: string;
         let newStart: number;
@@ -400,8 +437,22 @@ export function NotionBlockEditor({
 
         if (before.endsWith(openTag) && after.startsWith(closeTag)) {
           newContent = before.slice(0, -openTag.length) + selectedText + after.slice(closeTag.length);
-          newStart = selectionStart - openTag.length;
+          newStart = start - openTag.length;
           newEnd = newStart + selectedText.length;
+        } else if (
+          selectedText.startsWith(openTag) &&
+          selectedText.endsWith(closeTag) &&
+          selectedText.length >= openTag.length + closeTag.length
+        ) {
+          const unwrapped = selectedText.slice(openTag.length, -closeTag.length);
+          newContent = before + unwrapped + after;
+          newStart = start;
+          newEnd = newStart + unwrapped.length;
+        } else if (selectedText.length === 0) {
+          const formatted = `${openTag}${closeTag}`;
+          newContent = before + formatted + after;
+          newStart = start + openTag.length;
+          newEnd = newStart;
         } else {
           const cleanedText = selectedText
             .replace(/<\/?mark[^>]*>/gi, "")
@@ -409,16 +460,16 @@ export function NotionBlockEditor({
             .replace(/<\/?u>/gi, "");
           const formatted = `${openTag}${cleanedText}${closeTag}`;
           newContent = before + formatted + after;
-          newStart = selectionStart;
-          newEnd = selectionStart + formatted.length;
+          newStart = start;
+          newEnd = start + formatted.length;
         }
 
         setTimeout(() => {
-          const el = textareaRefs.current.get(blockId);
-          if (el) {
-            el.focus();
-            el.setSelectionRange(newStart, newEnd);
-            autoResize(el);
+          const targetEl = textareaRefs.current.get(blockId);
+          if (targetEl) {
+            targetEl.focus();
+            targetEl.setSelectionRange(newStart, newEnd);
+            autoResize(targetEl);
           }
         }, 30);
 
@@ -432,6 +483,16 @@ export function NotionBlockEditor({
 
     setFloatingToolbar(null);
     setActiveSubmenu(null);
+  };
+
+  const applyInlineFormat = (prefix: string, suffix: string = prefix) => {
+    if (!floatingToolbar) return;
+    executeInlineFormat(floatingToolbar.blockId, prefix, suffix);
+  };
+
+  const applyHtmlWrap = (openTag: string, closeTag: string) => {
+    if (!floatingToolbar) return;
+    executeHtmlWrap(floatingToolbar.blockId, openTag, closeTag);
   };
 
   const removeFormatting = () => {
@@ -662,6 +723,74 @@ export function NotionBlockEditor({
       }
     }
 
+    // Atajos de formato con teclado rápido (Ctrl+I, Ctrl+B, Ctrl+U, etc.)
+    if (e.ctrlKey || e.metaKey) {
+      const key = e.key.toLowerCase();
+      const target = e.currentTarget;
+      const start = target.selectionStart;
+      const end = target.selectionEnd;
+
+      // Cursiva: Ctrl + I
+      if (key === "i") {
+        e.preventDefault();
+        executeInlineFormat(block.id, "*", "*", start, end);
+        return;
+      }
+
+      // Negrita: Ctrl + B
+      if (key === "b") {
+        e.preventDefault();
+        executeInlineFormat(block.id, "**", "**", start, end);
+        return;
+      }
+
+      // Subrayado: Ctrl + U
+      if (key === "u") {
+        e.preventDefault();
+        executeHtmlWrap(block.id, "<u>", "</u>", start, end);
+        return;
+      }
+
+      // Tachado: Ctrl + Shift + X o Ctrl + Shift + S
+      if (e.shiftKey && (key === "x" || key === "s")) {
+        e.preventDefault();
+        executeInlineFormat(block.id, "~~", "~~", start, end);
+        return;
+      }
+
+      // Código en línea: Ctrl + E o Ctrl + Shift + C
+      if (key === "e" || (e.shiftKey && key === "c")) {
+        e.preventDefault();
+        executeInlineFormat(block.id, "`", "`", start, end);
+        return;
+      }
+
+      // Resaltador (amarillo): Ctrl + Shift + H
+      if (e.shiftKey && key === "h") {
+        e.preventDefault();
+        executeHtmlWrap(
+          block.id,
+          '<mark class="bg-amber-200/90 text-amber-950 rounded px-1">',
+          "</mark>",
+          start,
+          end
+        );
+        return;
+      }
+
+      // Enlace: Ctrl + K
+      if (key === "k") {
+        e.preventDefault();
+        const selected = block.content.slice(start, end);
+        if (selected) {
+          executeInlineFormat(block.id, "[", "](https://)", start, end);
+        } else {
+          executeInlineFormat(block.id, "[enlace](", ")", start, end);
+        }
+        return;
+      }
+    }
+
     // Enter pressed
     if (e.key === "Enter" && !e.shiftKey) {
       if (block.type === "code") {
@@ -706,16 +835,60 @@ export function NotionBlockEditor({
       return;
     }
 
-    // Backspace on empty block
-    if (e.key === "Backspace" && block.content === "") {
-      if (block.type !== "paragraph") {
-        e.preventDefault();
-        changeBlockType(block.id, "paragraph");
-        return;
+    // Backspace al inicio de página o de bloque
+    if (e.key === "Backspace") {
+      const target = e.currentTarget;
+      const isAtBeginning = target.selectionStart === 0 && target.selectionEnd === 0;
+
+      // 1. Si estamos en el primer bloque de la página y al inicio del texto (index === 0):
+      if (index === 0 && isAtBeginning) {
+        const isEmptyPage = blocks.every((b) => b.content.trim() === "");
+        if (onPageUnderflow) {
+          e.preventDefault();
+          onPageUnderflow(isEmptyPage);
+          return;
+        }
       }
-      if (blocks.length > 1) {
+
+      // 2. Si el bloque está vacío y no es el primero de la página:
+      if (block.content === "") {
+        if (block.type !== "paragraph") {
+          e.preventDefault();
+          changeBlockType(block.id, "paragraph");
+          return;
+        }
+        if (blocks.length > 1) {
+          e.preventDefault();
+          deleteBlock(block.id);
+          return;
+        }
+      }
+
+      // 3. Si estamos al inicio de un bloque intermedio (index > 0): unir con el bloque anterior
+      if (isAtBeginning && index > 0) {
         e.preventDefault();
-        deleteBlock(block.id);
+        const prevBlock = blocks[index - 1];
+        const prevContentLen = prevBlock.content.length;
+        const combinedContent = prevBlock.content + block.content;
+
+        setBlocks((prev) => {
+          const next = prev
+            .filter((b) => b.id !== block.id)
+            .map((b) => (b.id === prevBlock.id ? { ...b, content: combinedContent } : b));
+          saveLocalStorageDraft(pageId, next, false);
+          triggerAutoSave(next);
+          return next;
+        });
+
+        setEditingBlockId(prevBlock.id);
+        setTimeout(() => {
+          const prevEl = textareaRefs.current.get(prevBlock.id);
+          if (prevEl) {
+            prevEl.focus();
+            prevEl.setSelectionRange(prevContentLen, prevContentLen);
+            autoResize(prevEl);
+          }
+        }, 50);
         return;
       }
     }
