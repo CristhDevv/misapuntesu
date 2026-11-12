@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useTransition, useCallback } from "react";
+import React, { useState, useEffect, useTransition, useCallback, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -74,6 +74,7 @@ export function BookPageFlipView({ book }: BookPageFlipViewProps) {
   const [isFlipping, setIsFlipping] = useState(false);
   const [flipDirection, setFlipDirection] = useState<"next" | "prev">("next");
   const [pageToDelete, setPageToDelete] = useState<string | null>(null);
+  const isReflowingRef = useRef(false);
 
   // UI Drawers & Zen Mode
   const [tocOpen, setTocOpen] = useState(false);
@@ -338,30 +339,280 @@ export function BookPageFlipView({ book }: BookPageFlipViewProps) {
     ]
   );
 
+  // Helper: leer los bloques más recientes de una página (draft en localStorage o JSON de BD)
+  const getLatestPageBlocks = useCallback((page: BookPageData): NotionBlock[] => {
+    try {
+      const rawDraft = localStorage.getItem(`misapuntesu_book_page_draft_${page.id}`);
+      if (rawDraft) {
+        const parsedDraft = JSON.parse(rawDraft);
+        if (Array.isArray(parsedDraft?.blocks) && parsedDraft.blocks.length > 0) {
+          return parsedDraft.blocks;
+        }
+      }
+    } catch {
+      // Ignorar error de lectura localStorage
+    }
+    try {
+      const parsed = JSON.parse(page.blocksJson);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }, []);
+
+  // Motor de Auto-Reflow Paginado Automático de todo el libro (estilo Microsoft Word)
+  const handleReflowBook = useCallback(
+    (
+      fromPageId: string,
+      updatedFromBlocks: NotionBlock[],
+      focusInfo?: { blockId: string; cursorPos: number }
+    ): boolean => {
+      if (isReflowingRef.current) return false;
+      const fromIndex = sortedPages.findIndex((p) => p.id === fromPageId);
+      if (fromIndex === -1) return false;
+
+      const listEl = document.querySelector(
+        `[data-page-id="${fromPageId}"] [data-notion-blocks-list="true"]`
+      ) as HTMLElement | null;
+      const frameEl = listEl?.parentElement?.parentElement;
+      if (!listEl || !frameEl) return false;
+
+      const availableWidth = listEl.clientWidth || 560;
+      const availableHeight = Math.max(240, (frameEl.clientHeight || 580) - 14);
+
+      const tailPages = sortedPages.slice(fromIndex);
+      const currentPagesBlocks: NotionBlock[][] = tailPages.map((p, idx) =>
+        idx === 0 ? updatedFromBlocks : getLatestPageBlocks(p)
+      );
+
+      // Juntar todos los bloques desde esta página hasta el final del libro
+      const allBlocks: NotionBlock[] = [];
+      currentPagesBlocks.forEach((pb) => {
+        pb.forEach((b) => allBlocks.push(b));
+      });
+
+      // Si todo quedó vacío excepto 1 bloque vacío, dejar 1 página
+      if (allBlocks.length === 0) {
+        allBlocks.push({ id: `b_${Date.now()}_1`, type: "paragraph", content: "" });
+      }
+
+      // Medidor DOM invisible con exactamente las mismas clases tipográficas del libro
+      const fontFamilyCls = { sans: "font-sans", serif: "font-serif", mono: "font-mono" }[
+        customization.fontFamily
+      ];
+      const fontSizeCls = { sm: "text-sm", base: "text-base", lg: "text-lg", xl: "text-xl" }[
+        customization.fontSize
+      ];
+      const lineHeightCls = {
+        compact: "leading-normal",
+        relaxed: "leading-relaxed",
+        loose: "leading-loose",
+      }[customization.lineHeight];
+
+      const measurer = document.createElement("div");
+      measurer.className = `${fontFamilyCls} ${fontSizeCls} ${lineHeightCls} space-y-0.5`;
+      measurer.style.position = "fixed";
+      measurer.style.left = "-99999px";
+      measurer.style.top = "0";
+      measurer.style.width = `${availableWidth}px`;
+      measurer.style.visibility = "hidden";
+      measurer.style.pointerEvents = "none";
+      document.body.appendChild(measurer);
+
+      const chunkedPages: NotionBlock[][] = [];
+      let currentChunk: NotionBlock[] = [];
+      let currentHeight = 0;
+
+      try {
+        for (const b of allBlocks) {
+          const item = document.createElement("div");
+          item.style.whiteSpace = "pre-wrap";
+          item.style.wordBreak = "break-word";
+          if (b.type === "h1") {
+            item.className = "text-xl sm:text-2xl font-bold tracking-tight mt-1 mb-0.5";
+          } else if (b.type === "h2") {
+            item.className = "text-lg sm:text-xl font-semibold tracking-tight mt-1 mb-0.5";
+          } else if (b.type === "h3") {
+            item.className = "text-base font-medium tracking-tight mt-0.5";
+          } else if (b.type === "callout") {
+            item.className = "my-1.5 p-3 rounded-2xl border";
+          } else if (b.type === "quote") {
+            item.className = "my-1.5 pl-3 border-l-3 italic font-serif";
+          } else if (b.type === "code") {
+            item.className = "my-1.5 p-3 rounded-xl font-mono text-xs sm:text-sm";
+          } else {
+            item.className = "leading-relaxed";
+          }
+          item.textContent = b.content.trim().length > 0 ? b.content : " ";
+          measurer.appendChild(item);
+          const blockH = item.getBoundingClientRect().height + 4;
+          measurer.removeChild(item);
+
+          if (currentHeight + blockH > availableHeight && currentChunk.length > 0) {
+            chunkedPages.push(currentChunk);
+            currentChunk = [b];
+            currentHeight = blockH;
+          } else {
+            currentChunk.push(b);
+            currentHeight += blockH;
+          }
+        }
+        if (currentChunk.length > 0) {
+          chunkedPages.push(currentChunk);
+        }
+      } finally {
+        document.body.removeChild(measurer);
+      }
+
+      // Verificar si hubo algún cambio real en la distribución de páginas
+      const isSameDistribution =
+        chunkedPages.length === currentPagesBlocks.length &&
+        chunkedPages.every((chunk, idx) => {
+          const orig = currentPagesBlocks[idx];
+          if (chunk.length !== orig.length) return false;
+          return chunk.every((b, bi) => b.id === orig[bi].id && b.content === orig[bi].content);
+        });
+
+      if (isSameDistribution) return false;
+
+      isReflowingRef.current = true;
+      setTimeout(() => {
+        isReflowingRef.current = false;
+      }, 220);
+
+      // Identificar en qué página cayó el bloque enfocado
+      let focusPageOffset = 0;
+      if (focusInfo?.blockId) {
+        const foundIdx = chunkedPages.findIndex((chunk) =>
+          chunk.some((b) => b.id === focusInfo.blockId)
+        );
+        if (foundIdx !== -1) focusPageOffset = foundIdx;
+      }
+
+      const overlappingCount = Math.min(tailPages.length, chunkedPages.length);
+      const updatedIdsToPersist: { id: string; blocks: NotionBlock[] }[] = [];
+
+      // 1. Actualizar páginas existentes que permanecen
+      setPages((prev) => {
+        const nextList = [...prev];
+        for (let i = 0; i < overlappingCount; i++) {
+          const targetPage = tailPages[i];
+          const newBlocks = chunkedPages[i];
+          const globalIdx = nextList.findIndex((p) => p.id === targetPage.id);
+          if (globalIdx !== -1) {
+            nextList[globalIdx] = {
+              ...nextList[globalIdx],
+              blocksJson: JSON.stringify(newBlocks),
+            };
+          }
+        }
+        // Quitar páginas sobrantes al final si el documento se compactó
+        if (chunkedPages.length < tailPages.length) {
+          const toRemoveIds = new Set(tailPages.slice(chunkedPages.length).map((p) => p.id));
+          return nextList.filter((p) => !toRemoveIds.has(p.id));
+        }
+        return nextList;
+      });
+
+      for (let i = 0; i < overlappingCount; i++) {
+        const targetPage = tailPages[i];
+        const newBlocks = chunkedPages[i];
+        updatedIdsToPersist.push({ id: targetPage.id, blocks: newBlocks });
+
+        const shouldFocusThis = focusInfo && i === focusPageOffset;
+        window.dispatchEvent(
+          new CustomEvent("book-page-blocks-updated", {
+            detail: {
+              pageId: targetPage.id,
+              blocks: newBlocks,
+              ...(shouldFocusThis
+                ? { focusBlockId: focusInfo.blockId, cursorPos: focusInfo.cursorPos }
+                : {}),
+            },
+          })
+        );
+      }
+
+      // Mover visor si el cursor pasó a una página fuera del pliego actual
+      const targetAbsoluteIndex = fromIndex + focusPageOffset;
+      if (isSpread) {
+        const targetSpreadLeft =
+          targetAbsoluteIndex % 2 === 0 ? targetAbsoluteIndex : targetAbsoluteIndex - 1;
+        if (targetSpreadLeft !== spreadLeftIndex && targetAbsoluteIndex < tailPages.length + fromIndex) {
+          setCurrentPageIndex(Math.max(0, targetSpreadLeft));
+        }
+      } else if (targetAbsoluteIndex !== currentPageIndex) {
+        setCurrentPageIndex(Math.max(0, targetAbsoluteIndex));
+      }
+
+      // 2. Persistir en DB (actualizar, borrar sobrantes o crear nuevas si se desbordó)
+      const extraPagesToDelete =
+        chunkedPages.length < tailPages.length ? tailPages.slice(chunkedPages.length) : [];
+      const extraChunksToCreate =
+        chunkedPages.length > tailPages.length ? chunkedPages.slice(tailPages.length) : [];
+
+      for (const delPage of extraPagesToDelete) {
+        try {
+          localStorage.removeItem(`misapuntesu_book_page_draft_${delPage.id}`);
+        } catch {}
+      }
+
+      startTransition(async () => {
+        for (const item of updatedIdsToPersist) {
+          await updateBookPageBlocksAction(item.id, { blocks: item.blocks });
+        }
+        for (const delPage of extraPagesToDelete) {
+          await deleteBookPageAction(delPage.id);
+        }
+        for (const extraBlocks of extraChunksToCreate) {
+          const created = await createBookPageAction(book.id);
+          if (created.success && created.data) {
+            await updateBookPageBlocksAction(created.data.id, { blocks: extraBlocks });
+          }
+        }
+        if (extraPagesToDelete.length > 0 || extraChunksToCreate.length > 0) {
+          router.refresh();
+          if (extraChunksToCreate.length > 0 && focusPageOffset >= tailPages.length) {
+            setCurrentPageIndex(fromIndex + focusPageOffset);
+          }
+        }
+      });
+
+      return true;
+    },
+    [
+      sortedPages,
+      getLatestPageBlocks,
+      customization.fontFamily,
+      customization.fontSize,
+      customization.lineHeight,
+      isSpread,
+      spreadLeftIndex,
+      currentPageIndex,
+      book.id,
+      router,
+    ]
+  );
+
   // Jalar contenido de la página siguiente al presionar Supr (Delete) al final de una hoja (estilo Word)
   const handlePullFromNextPage = useCallback(
     (fromPageId: string, currentBlocks: NotionBlock[], currentBlockId: string) => {
       const fromIndex = sortedPages.findIndex((p) => p.id === fromPageId);
       if (fromIndex === -1 || fromIndex >= sortedPages.length - 1) return;
 
-      const nextPage = sortedPages[fromIndex + 1];
+      const lastCurrentBlock = currentBlocks[currentBlocks.length - 1];
+      const cursorPos = lastCurrentBlock ? lastCurrentBlock.content.length : 0;
 
-      // Leer la versión más reciente de la página siguiente (draft localStorage si existe o DB)
-      let nextBlocks: NotionBlock[] = [];
-      try {
-        const rawDraft = localStorage.getItem(`misapuntesu_book_page_draft_${nextPage.id}`);
-        if (rawDraft) {
-          const parsedDraft = JSON.parse(rawDraft);
-          if (Array.isArray(parsedDraft?.blocks) && parsedDraft.blocks.length > 0) {
-            nextBlocks = parsedDraft.blocks;
-          }
-        }
-      } catch {
-        // Ignorar error de lectura localStorage
-      }
-      if (nextBlocks.length === 0) {
-        nextBlocks = parseBlocks(nextPage.blocksJson);
-      }
+      // 1. Intentar primero reacomodar automáticamente todo el libro (reflow en cascada estilo Word)
+      const didReflow = handleReflowBook(fromPageId, currentBlocks, {
+        blockId: currentBlockId,
+        cursorPos,
+      });
+      if (didReflow) return;
+
+      // 2. Si no subió ningún bloque completo por falta de espacio de párrafo entero, traer el primer bloque de la siguiente página
+      const nextPage = sortedPages[fromIndex + 1];
+      const nextBlocks = getLatestPageBlocks(nextPage);
 
       const isNextEmpty =
         nextBlocks.length === 0 ||
@@ -382,16 +633,15 @@ export function BookPageFlipView({ book }: BookPageFlipViewProps) {
 
       const pulledBlock = nextBlocks[0];
       const remainingNextBlocks = nextBlocks.slice(1);
-      const lastCurrentBlock = currentBlocks[currentBlocks.length - 1];
 
       let newFromBlocks: NotionBlock[];
       let focusBlockId = currentBlockId;
-      let cursorPos = lastCurrentBlock ? lastCurrentBlock.content.length : 0;
+      let nextCursorPos = cursorPos;
 
       if (lastCurrentBlock && lastCurrentBlock.content === "") {
         newFromBlocks = [...currentBlocks.slice(0, -1), pulledBlock];
         focusBlockId = pulledBlock.id;
-        cursorPos = 0;
+        nextCursorPos = 0;
       } else {
         newFromBlocks = [...currentBlocks, pulledBlock];
       }
@@ -417,7 +667,7 @@ export function BookPageFlipView({ book }: BookPageFlipViewProps) {
             pageId: fromPageId,
             blocks: newFromBlocks,
             focusBlockId,
-            cursorPos,
+            cursorPos: nextCursorPos,
           },
         })
       );
@@ -446,7 +696,7 @@ export function BookPageFlipView({ book }: BookPageFlipViewProps) {
         });
       }
     },
-    [sortedPages, router]
+    [sortedPages, router, handleReflowBook, getLatestPageBlocks]
   );
 
   // Toggle bookmark action
@@ -696,6 +946,7 @@ export function BookPageFlipView({ book }: BookPageFlipViewProps) {
                     onPageOverflow={() => handlePageOverflow(leftPage.id)}
                     onPageUnderflow={(isEmpty) => handlePageUnderflow(leftPage.id, isEmpty)}
                     onPullNextPage={(blocks, blockId) => handlePullFromNextPage(leftPage.id, blocks, blockId)}
+                    onReflowBook={(blocks, focusInfo) => handleReflowBook(leftPage.id, blocks, focusInfo)}
                     fontFamilyClass={fontFamilyClasses}
                     fontSizeClass={fontSizeClasses}
                     lineHeightClass={lineHeightClasses}
@@ -736,6 +987,7 @@ export function BookPageFlipView({ book }: BookPageFlipViewProps) {
                         onPageOverflow={() => handlePageOverflow(rightPage.id)}
                         onPageUnderflow={(isEmpty) => handlePageUnderflow(rightPage.id, isEmpty)}
                         onPullNextPage={(blocks, blockId) => handlePullFromNextPage(rightPage.id, blocks, blockId)}
+                        onReflowBook={(blocks, focusInfo) => handleReflowBook(rightPage.id, blocks, focusInfo)}
                         fontFamilyClass={fontFamilyClasses}
                         fontSizeClass={fontSizeClasses}
                         lineHeightClass={lineHeightClasses}

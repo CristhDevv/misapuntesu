@@ -41,6 +41,10 @@ interface NotionBlockEditorProps {
   onPageOverflow?: () => void;
   onPageUnderflow?: (isEmptyPage: boolean) => void;
   onPullNextPage?: (currentBlocks: NotionBlock[], currentBlockId: string) => void;
+  onReflowBook?: (
+    currentBlocks: NotionBlock[],
+    focusInfo?: { blockId: string; cursorPos: number }
+  ) => void;
   readOnly?: boolean;
   fontFamilyClass?: string;
   fontSizeClass?: string;
@@ -102,6 +106,7 @@ export function NotionBlockEditor({
   onPageOverflow,
   onPageUnderflow,
   onPullNextPage,
+  onReflowBook,
   readOnly = false,
   fontFamilyClass = "font-sans",
   fontSizeClass = "text-base",
@@ -109,6 +114,8 @@ export function NotionBlockEditor({
   themeMode = "light",
 }: NotionBlockEditorProps) {
   const editorContainerRef = useRef<HTMLDivElement>(null);
+  const blocksListRef = useRef<HTMLDivElement>(null);
+  const reflowTimerRef = useRef<NodeJS.Timeout | null>(null);
   const [blocks, setBlocks] = useState<NotionBlock[]>(() => {
     const draft = getLocalStorageDraft(pageId);
     if (draft && draft.length > 0) {
@@ -916,6 +923,7 @@ export function NotionBlockEditor({
             .map((b) => (b.id === prevBlock.id ? { ...b, content: combinedContent } : b));
           saveLocalStorageDraft(pageId, next, false);
           triggerAutoSave(next);
+          scheduleReflowCheck(next, true, { blockId: prevBlock.id, cursorPos: prevContentLen });
           return next;
         });
 
@@ -959,6 +967,7 @@ export function NotionBlockEditor({
               );
             saveLocalStorageDraft(pageId, next, false);
             triggerAutoSave(next);
+            scheduleReflowCheck(next, true, { blockId: block.id, cursorPos });
             return next;
           });
 
@@ -1009,13 +1018,107 @@ export function NotionBlockEditor({
     }
   };
 
+  const scheduleReflowCheck = useCallback(
+    (
+      nextBlocks: NotionBlock[],
+      isShrinkOrPull: boolean,
+      focusInfo?: { blockId: string; cursorPos: number }
+    ) => {
+      if (!onReflowBook) return;
+      if (reflowTimerRef.current) clearTimeout(reflowTimerRef.current);
+      reflowTimerRef.current = setTimeout(() => {
+        const frame = editorContainerRef.current?.parentElement;
+        if (!frame) return;
+        const isOverflowing = frame.scrollHeight > frame.clientHeight + 2;
+        const hasFreeSpace = frame.scrollHeight < frame.clientHeight - 26;
+        if (isOverflowing || (isShrinkOrPull && hasFreeSpace)) {
+          onReflowBook(nextBlocks, focusInfo);
+        }
+      }, 90);
+    },
+    [onReflowBook]
+  );
+
+  const handlePaste = (
+    e: React.ClipboardEvent<HTMLTextAreaElement>,
+    block: NotionBlock
+  ) => {
+    const raw = e.clipboardData?.getData("text/plain");
+    if (!raw) return;
+
+    // Si el texto pegado tiene múltiples líneas, dividir en párrafos estilo Word y repaginar
+    if (raw.includes("\n") || raw.includes("\r")) {
+      e.preventDefault();
+      const target = e.currentTarget;
+      const start = target.selectionStart ?? block.content.length;
+      const end = target.selectionEnd ?? start;
+      const before = block.content.slice(0, start);
+      const after = block.content.slice(end);
+      const lines = raw.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
+
+      const baseTs = Date.now();
+      const firstLineContent = before + lines[0];
+      const newMiddleAndLast: NotionBlock[] = lines.slice(1).map((line, i) => ({
+        id: `b_${baseTs}_${i + 1}`,
+        type: "paragraph",
+        content: i === lines.length - 2 ? line + after : line,
+      }));
+
+      const lastCreatedId =
+        newMiddleAndLast.length > 0
+          ? newMiddleAndLast[newMiddleAndLast.length - 1].id
+          : block.id;
+      const lastLineLen =
+        newMiddleAndLast.length > 0
+          ? newMiddleAndLast[newMiddleAndLast.length - 1].content.length - after.length
+          : firstLineContent.length;
+
+      let computedNext: NotionBlock[] = [];
+      setBlocks((prev) => {
+        const idx = prev.findIndex((b) => b.id === block.id);
+        if (idx === -1) return prev;
+        const updatedCurrent = { ...prev[idx], content: firstLineContent };
+        const next = [
+          ...prev.slice(0, idx),
+          updatedCurrent,
+          ...newMiddleAndLast,
+          ...prev.slice(idx + 1),
+        ];
+        computedNext = next;
+        saveLocalStorageDraft(pageId, next, false);
+        triggerAutoSave(next);
+        return next;
+      });
+
+      setEditingBlockId(lastCreatedId);
+      setTimeout(() => {
+        const targetEl = textareaRefs.current.get(lastCreatedId);
+        if (targetEl) {
+          targetEl.focus();
+          targetEl.setSelectionRange(lastLineLen, lastLineLen);
+          autoResize(targetEl);
+        }
+        if (onReflowBook && computedNext.length > 0) {
+          onReflowBook(computedNext, { blockId: lastCreatedId, cursorPos: lastLineLen });
+        }
+      }, 50);
+    }
+  };
+
   const handleInput = (
     e: React.ChangeEvent<HTMLTextAreaElement>,
     block: NotionBlock
   ) => {
     const val = e.target.value;
+    const isShrink = val.length < block.content.length;
+    const cursorPos = e.target.selectionStart ?? val.length;
     autoResize(e.target);
+
+    const nextBlocks = blocksRef.current.map((b) =>
+      b.id === block.id ? { ...b, content: val } : b
+    );
     updateBlock(block.id, { content: val });
+    scheduleReflowCheck(nextBlocks, isShrink, { blockId: block.id, cursorPos });
 
     // Detect slash command
     if (val.startsWith("/")) {
@@ -1160,8 +1263,14 @@ export function NotionBlockEditor({
 
       {/* Blocks List */}
       <div
+        ref={blocksListRef}
+        data-notion-blocks-list="true"
         className="space-y-0.5 flex-1 min-h-0 w-full cursor-text"
         onClick={(e) => {
+          const sel = window.getSelection();
+          if (sel && !sel.isCollapsed && sel.toString().trim().length > 0) {
+            return;
+          }
           if (e.target === e.currentTarget && blocks.length > 0) {
             const lastBlock = blocks[blocks.length - 1];
             setEditingBlockId(lastBlock.id);
@@ -1188,6 +1297,10 @@ export function NotionBlockEditor({
 
           const startEditing = () => {
             if (!readOnly) {
+              const sel = window.getSelection();
+              if (sel && !sel.isCollapsed && sel.toString().trim().length > 0) {
+                return;
+              }
               setEditingBlockId(block.id);
               setTimeout(() => {
                 const el = textareaRefs.current.get(block.id);
@@ -1350,6 +1463,8 @@ export function NotionBlockEditor({
                           onSelect={(e) => handleTextSelect(block.id, e)}
                           onMouseUp={(e) => handleTextSelect(block.id, e)}
                           onKeyUp={(e) => handleTextSelect(block.id, e)}
+                          onPaste={(e) => handlePaste(e, block)}
+                          onCut={() => setTimeout(() => scheduleReflowCheck(blocksRef.current, true), 50)}
                           onChange={(e) => handleInput(e, block)}
                           onKeyDown={(e) => handleKeyDown(e, block, index)}
                           placeholder="Nota importante o punto clave..."
@@ -1381,6 +1496,8 @@ export function NotionBlockEditor({
                         onSelect={(e) => handleTextSelect(block.id, e)}
                         onMouseUp={(e) => handleTextSelect(block.id, e)}
                         onKeyUp={(e) => handleTextSelect(block.id, e)}
+                        onPaste={(e) => handlePaste(e, block)}
+                        onCut={() => setTimeout(() => scheduleReflowCheck(blocksRef.current, true), 50)}
                         onChange={(e) => handleInput(e, block)}
                         onKeyDown={(e) => handleKeyDown(e, block, index)}
                         placeholder="Cita memorable o referencia teórica..."
@@ -1421,6 +1538,8 @@ export function NotionBlockEditor({
                           onSelect={(e) => handleTextSelect(block.id, e)}
                           onMouseUp={(e) => handleTextSelect(block.id, e)}
                           onKeyUp={(e) => handleTextSelect(block.id, e)}
+                          onPaste={(e) => handlePaste(e, block)}
+                          onCut={() => setTimeout(() => scheduleReflowCheck(blocksRef.current, true), 50)}
                           onChange={(e) => handleInput(e, block)}
                           onKeyDown={(e) => handleKeyDown(e, block, index)}
                           placeholder="Tarea o práctica pendiente..."
@@ -1455,6 +1574,8 @@ export function NotionBlockEditor({
                           onSelect={(e) => handleTextSelect(block.id, e)}
                           onMouseUp={(e) => handleTextSelect(block.id, e)}
                           onKeyUp={(e) => handleTextSelect(block.id, e)}
+                          onPaste={(e) => handlePaste(e, block)}
+                          onCut={() => setTimeout(() => scheduleReflowCheck(blocksRef.current, true), 50)}
                           onChange={(e) => handleInput(e, block)}
                           onKeyDown={(e) => handleKeyDown(e, block, index)}
                           placeholder="Punto clave..."
@@ -1487,6 +1608,8 @@ export function NotionBlockEditor({
                           onSelect={(e) => handleTextSelect(block.id, e)}
                           onMouseUp={(e) => handleTextSelect(block.id, e)}
                           onKeyUp={(e) => handleTextSelect(block.id, e)}
+                          onPaste={(e) => handlePaste(e, block)}
+                          onCut={() => setTimeout(() => scheduleReflowCheck(blocksRef.current, true), 50)}
                           onChange={(e) => handleInput(e, block)}
                           onKeyDown={(e) => handleKeyDown(e, block, index)}
                           placeholder="Paso ordenado..."
@@ -1515,6 +1638,8 @@ export function NotionBlockEditor({
                         onSelect={(e) => handleTextSelect(block.id, e)}
                         onMouseUp={(e) => handleTextSelect(block.id, e)}
                         onKeyUp={(e) => handleTextSelect(block.id, e)}
+                        onPaste={(e) => handlePaste(e, block)}
+                        onCut={() => setTimeout(() => scheduleReflowCheck(blocksRef.current, true), 50)}
                         onChange={(e) => handleInput(e, block)}
                         onKeyDown={(e) => handleKeyDown(e, block, index)}
                         placeholder={
