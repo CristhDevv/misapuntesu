@@ -503,12 +503,16 @@ export function NotionBlockEditor({
     });
   };
 
-  const insertBlockAfter = (afterId: string, type: NotionBlock["type"] = "paragraph") => {
+  const insertBlockAfter = (
+    afterId: string,
+    type: NotionBlock["type"] = "paragraph",
+    initialContent = ""
+  ) => {
     const newId = "b_" + Date.now() + "_" + Math.random().toString(36).substring(2, 6);
     const newBlock: NotionBlock = {
       id: newId,
       type,
-      content: "",
+      content: initialContent,
       calloutIcon: type === "callout" ? "💡" : undefined,
       language: type === "code" ? "typescript" : undefined,
     };
@@ -531,6 +535,7 @@ export function NotionBlockEditor({
       const el = textareaRefs.current.get(newId);
       if (el) {
         el.focus();
+        el.setSelectionRange(0, 0);
         autoResize(el);
       }
     }, 50);
@@ -664,22 +669,40 @@ export function NotionBlockEditor({
       }
       e.preventDefault();
 
-      // Paginación física de libro: si el contenido ya llena la hoja física o estamos cerca del final
+      const target = e.currentTarget;
       const container = editorContainerRef.current?.parentElement;
-      if (container && onPageOverflow) {
-        const containerRect = container.getBoundingClientRect();
-        const targetRect = e.currentTarget.getBoundingClientRect();
-        const isNearBottom = targetRect.bottom >= containerRect.bottom - 45;
-        const isContentFull = container.scrollHeight >= container.clientHeight - 15;
 
-        if (isNearBottom || isContentFull) {
+      // Paginación física de libro: SOLO si estamos en el ÚLTIMO bloque de la hoja Y físicamente al borde inferior
+      if (container && onPageOverflow && index === blocks.length - 1) {
+        const containerRect = container.getBoundingClientRect();
+        const targetRect = target.getBoundingClientRect();
+        const isAtBottom = targetRect.bottom >= containerRect.bottom - 45;
+
+        if (isAtBottom) {
           onPageOverflow();
           return;
         }
       }
 
-      const nextType = block.type === "todo" ? "todo" : block.type === "bullet" ? "bullet" : block.type === "numbered" ? "numbered" : "paragraph";
-      insertBlockAfter(block.id, nextType);
+      // Comportamiento normal estilo Word / editor de texto
+      const selStart = target.selectionStart ?? block.content.length;
+      const textBefore = block.content.slice(0, selStart);
+      const textAfter = block.content.slice(selStart);
+
+      if (textBefore !== block.content) {
+        updateBlock(block.id, { content: textBefore });
+      }
+
+      const nextType =
+        block.type === "todo"
+          ? "todo"
+          : block.type === "bullet"
+          ? "bullet"
+          : block.type === "numbered"
+          ? "numbered"
+          : "paragraph";
+
+      insertBlockAfter(block.id, nextType, textAfter);
       return;
     }
 
@@ -731,14 +754,6 @@ export function NotionBlockEditor({
     const val = e.target.value;
     autoResize(e.target);
     updateBlock(block.id, { content: val });
-
-    // Detección de límite físico de hoja al escribir continuamente
-    const container = editorContainerRef.current?.parentElement;
-    if (container && onPageOverflow) {
-      if (container.scrollHeight > container.clientHeight + 15) {
-        onPageOverflow();
-      }
-    }
 
     // Detect slash command
     if (val.startsWith("/")) {
