@@ -110,9 +110,96 @@ export function AdaptiveNotebookView({ note, isSplitView = false }: AdaptiveNote
     }
   });
 
-  // Estado de autoguardado
-  const [saveStatus, setSaveStatus] = useState<"saved" | "saving">("saved");
+  // Estado de autoguardado resiliente
+  const [saveStatus, setSaveStatus] = useState<"saved" | "saving" | "offline_saved">("saved");
   const saveTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Helper para persistencia inmediata en LocalStorage ante apagón o caída de red
+  const persistNoteDraft = (updatedFields: Record<string, unknown>, isSynced: boolean) => {
+    if (typeof window === "undefined") return;
+    try {
+      const raw = localStorage.getItem(`note_draft_${note.id}`);
+      const current = raw ? JSON.parse(raw) : {};
+      const merged = {
+        ...current,
+        id: note.id,
+        title,
+        studyMethod,
+        masteryLevel,
+        freeContent,
+        cornellCues,
+        cornellSummary,
+        feynmanSimple,
+        feynmanGaps,
+        feynmanExample,
+        flashcards,
+        attachments,
+        ...updatedFields,
+        updatedAt: Date.now(),
+        synced: isSynced,
+      };
+      localStorage.setItem(`note_draft_${note.id}`, JSON.stringify(merged));
+    } catch {
+      // ignore
+    }
+  };
+
+  // Restaurar borrador de LocalStorage si existe y tenía cambios pendientes
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(`note_draft_${note.id}`);
+      if (raw) {
+        const draft = JSON.parse(raw);
+        if (draft && draft.synced === false) {
+          if (draft.title !== undefined) setTitle(draft.title);
+          if (draft.freeContent !== undefined) setFreeContent(draft.freeContent);
+          if (draft.cornellCues !== undefined) setCornellCues(draft.cornellCues);
+          if (draft.cornellSummary !== undefined) setCornellSummary(draft.cornellSummary);
+          if (draft.feynmanSimple !== undefined) setFeynmanSimple(draft.feynmanSimple);
+          if (draft.feynmanGaps !== undefined) setFeynmanGaps(draft.feynmanGaps);
+          if (draft.feynmanExample !== undefined) setFeynmanExample(draft.feynmanExample);
+          if (Array.isArray(draft.flashcards)) setFlashcards(draft.flashcards);
+          if (Array.isArray(draft.attachments)) setAttachments(draft.attachments);
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }, [note.id]);
+
+  // Sincronización automática al recuperar conexión
+  useEffect(() => {
+    const handleOnline = async () => {
+      try {
+        const raw = localStorage.getItem(`note_draft_${note.id}`);
+        if (raw) {
+          const draft = JSON.parse(raw);
+          if (draft && draft.synced === false) {
+            setSaveStatus("saving");
+            const res = await updateNotePageAction(note.id, {
+              title: draft.title,
+              freeContent: draft.freeContent,
+              cornellCues: draft.cornellCues,
+              cornellSummary: draft.cornellSummary,
+              feynmanSimple: draft.feynmanSimple,
+              feynmanGaps: draft.feynmanGaps,
+              feynmanExample: draft.feynmanExample,
+              flashcardsJson: JSON.stringify(draft.flashcards || []),
+              attachmentsJson: JSON.stringify(draft.attachments || []),
+            });
+            if (res.success) {
+              setSaveStatus("saved");
+              persistNoteDraft({}, true);
+            }
+          }
+        }
+      } catch {
+        // ignore
+      }
+    };
+    window.addEventListener("online", handleOnline);
+    return () => window.removeEventListener("online", handleOnline);
+  }, [note.id]);
 
   // Estado de Active Recall (revelar respuestas)
   const [revealedCards, setRevealedCards] = useState<Record<string, boolean>>({});
@@ -189,17 +276,34 @@ export function AdaptiveNotebookView({ note, isSplitView = false }: AdaptiveNote
     });
   };
 
-  // Debounced auto-save
+  // Debounced auto-save resiliente con contingencia offline y sincronización
   const triggerAutoSave = (updatedFields: Record<string, unknown>) => {
     setSaveStatus("saving");
+    persistNoteDraft(updatedFields, false);
+
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
 
-    saveTimerRef.current = setTimeout(() => {
-      startTransition(async () => {
-        await updateNotePageAction(note.id, updatedFields);
-        setSaveStatus("saved");
-      });
-    }, 600);
+    saveTimerRef.current = setTimeout(async () => {
+      if (typeof navigator !== "undefined" && !navigator.onLine) {
+        setSaveStatus("offline_saved");
+        persistNoteDraft(updatedFields, false);
+        return;
+      }
+
+      try {
+        const res = await updateNotePageAction(note.id, updatedFields);
+        if (res.success) {
+          setSaveStatus("saved");
+          persistNoteDraft(updatedFields, true);
+        } else {
+          setSaveStatus("offline_saved");
+          persistNoteDraft(updatedFields, false);
+        }
+      } catch {
+        setSaveStatus("offline_saved");
+        persistNoteDraft(updatedFields, false);
+      }
+    }, 800);
   };
 
   // Manejar cambio de método
@@ -306,11 +410,19 @@ export function AdaptiveNotebookView({ note, isSplitView = false }: AdaptiveNote
           <div className="flex items-center gap-1.5 text-xs text-[#8E8E93]">
             <span
               className={`w-2 h-2 rounded-full ${
-                saveStatus === "saving" ? "bg-amber-400 animate-ping" : "bg-[#34C759]"
+                saveStatus === "saving"
+                  ? "bg-amber-400 animate-ping"
+                  : saveStatus === "offline_saved"
+                  ? "bg-emerald-500"
+                  : "bg-[#34C759]"
               }`}
             />
             <span className="text-[11px] font-medium">
-              {saveStatus === "saving" ? "Guardando..." : "Guardado"}
+              {saveStatus === "saving"
+                ? "Guardando..."
+                : saveStatus === "offline_saved"
+                ? "Guardado en dispositivo ⚡"
+                : "Guardado"}
             </span>
           </div>
         </div>

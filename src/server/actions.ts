@@ -278,7 +278,7 @@ export async function updateNotePageAction(
       data: validated,
     });
 
-    safeRevalidate(`/subjects/${note.subjectId}/notes/${note.id}`);
+    // safeRevalidate para listas pero no para la vista activa del apunte para evitar recrear el árbol de React durante la escritura
     safeRevalidate(`/subjects/${note.subjectId}`);
     safeRevalidate("/");
     return { success: true, data: { id: note.id } };
@@ -826,7 +826,7 @@ export async function updateBookPageBlocksAction(
       data: { updatedAt: new Date() },
     });
 
-    safeRevalidate(`/books/${updated.bookId}`);
+    // Guardado silencioso sin revalidación de ruta para no reiniciar el árbol ni robar foco al escribir
     return { success: true, data: true };
   } catch (err: unknown) {
     return { success: false, error: (err as Error).message };

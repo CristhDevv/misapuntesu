@@ -50,6 +50,39 @@ const BLOCK_ICONS: Record<string, React.ElementType> = {
   divider: Minus,
 };
 
+const getLocalStorageDraft = (pid: string): NotionBlock[] | null => {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(`book_page_draft_${pid}`);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed.blocks) && parsed.blocks.length > 0) {
+        return parsed.blocks;
+      }
+    }
+  } catch {
+    // ignore
+  }
+  return null;
+};
+
+const saveLocalStorageDraft = (pid: string, newBlocks: NotionBlock[], isSynced: boolean) => {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(
+      `book_page_draft_${pid}`,
+      JSON.stringify({
+        pageId: pid,
+        blocks: newBlocks,
+        updatedAt: Date.now(),
+        synced: isSynced,
+      })
+    );
+  } catch {
+    // ignore
+  }
+};
+
 export function NotionBlockEditor({
   initialBlocks,
   pageId,
@@ -60,8 +93,12 @@ export function NotionBlockEditor({
   lineHeightClass = "leading-relaxed",
   themeMode = "light",
 }: NotionBlockEditorProps) {
-  const [blocks, setBlocks] = useState<NotionBlock[]>(() =>
-    initialBlocks.length > 0
+  const [blocks, setBlocks] = useState<NotionBlock[]>(() => {
+    const draft = getLocalStorageDraft(pageId);
+    if (draft && draft.length > 0) {
+      return draft;
+    }
+    return initialBlocks.length > 0
       ? initialBlocks
       : [
           {
@@ -69,29 +106,38 @@ export function NotionBlockEditor({
             type: "paragraph",
             content: "",
           },
-        ]
-  );
+        ];
+  });
 
   // Active editing block ID
   const [editingBlockId, setEditingBlockId] = useState<string | null>(null);
 
-  // Sync if pageId changes
+  const prevPageIdRef = useRef(pageId);
+  const blocksRef = useRef(blocks);
+  blocksRef.current = blocks;
+
+  // Sync if pageId changes (cambio real de página, no re-render de propiedades)
   useEffect(() => {
-    setBlocks(
-      initialBlocks.length > 0
-        ? initialBlocks
-        : [
-            {
-              id: "b_" + Date.now() + "_1",
-              type: "paragraph",
-              content: "",
-            },
-          ]
-    );
-    setEditingBlockId(null);
+    if (prevPageIdRef.current !== pageId) {
+      prevPageIdRef.current = pageId;
+      const draft = getLocalStorageDraft(pageId);
+      const toLoad = draft && draft.length > 0 ? draft : initialBlocks;
+      setBlocks(
+        toLoad.length > 0
+          ? toLoad
+          : [
+              {
+                id: "b_" + Date.now() + "_1",
+                type: "paragraph",
+                content: "",
+              },
+            ]
+      );
+      setEditingBlockId(null);
+    }
   }, [pageId, initialBlocks]);
 
-  const [savingStatus, setSavingStatus] = useState<"saved" | "saving" | "unsaved">("saved");
+  const [savingStatus, setSavingStatus] = useState<"saved" | "saving" | "unsaved" | "offline_saved">("saved");
   const [slashMenu, setSlashMenu] = useState<{
     blockId: string;
     filter: string;
@@ -99,6 +145,9 @@ export function NotionBlockEditor({
     top: number;
     left: number;
   } | null>(null);
+
+  const slashMenuRef = useRef(slashMenu);
+  slashMenuRef.current = slashMenu;
 
   const [blockMenuId, setBlockMenuId] = useState<string | null>(null);
   const [copiedCodeId, setCopiedCodeId] = useState<string | null>(null);
@@ -113,27 +162,85 @@ export function NotionBlockEditor({
     el.style.height = `${Math.max(el.scrollHeight, 24)}px`;
   };
 
-  // Debounced auto-save
+  // Debounced auto-save resiliente con contingencia offline y sincronización en reconexión
   const triggerAutoSave = useCallback(
     (newBlocks: NotionBlock[]) => {
       setSavingStatus("unsaved");
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
       saveTimerRef.current = setTimeout(async () => {
+        if (typeof navigator !== "undefined" && !navigator.onLine) {
+          setSavingStatus("offline_saved");
+          saveLocalStorageDraft(pageId, newBlocks, false);
+          return;
+        }
+
         setSavingStatus("saving");
         try {
           await onSave(newBlocks);
           setSavingStatus("saved");
+          saveLocalStorageDraft(pageId, newBlocks, true);
         } catch {
-          setSavingStatus("unsaved");
+          // En caso de corte de red momentáneo, se marca guardado seguro en dispositivo
+          setSavingStatus("offline_saved");
+          saveLocalStorageDraft(pageId, newBlocks, false);
         }
-      }, 900);
+      }, 1000);
     },
-    [onSave]
+    [onSave, pageId]
   );
+
+  // Sincronización automática cuando el dispositivo recupera conexión a internet
+  useEffect(() => {
+    const handleOnline = async () => {
+      try {
+        const raw = localStorage.getItem(`book_page_draft_${pageId}`);
+        if (raw) {
+          const draft = JSON.parse(raw);
+          if (draft && draft.synced === false && Array.isArray(draft.blocks)) {
+            setSavingStatus("saving");
+            await onSave(draft.blocks);
+            setSavingStatus("saved");
+            saveLocalStorageDraft(pageId, draft.blocks, true);
+          }
+        }
+      } catch {
+        // ignore
+      }
+    };
+
+    window.addEventListener("online", handleOnline);
+    return () => window.removeEventListener("online", handleOnline);
+  }, [pageId, onSave]);
+
+  // Protección ante cierre repentino de pestaña o navegador
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      if (blocksRef.current && blocksRef.current.length > 0) {
+        saveLocalStorageDraft(pageId, blocksRef.current, false);
+      }
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [pageId]);
+
+  const handleBlur = (blockId: string, e: React.FocusEvent<HTMLTextAreaElement>) => {
+    const relatedTarget = e.relatedTarget as HTMLElement | null;
+    if (relatedTarget && relatedTarget.closest("[data-notion-editor]")) {
+      return;
+    }
+    setTimeout(() => {
+      if (slashMenuRef.current) return;
+      const active = document.activeElement;
+      if (!active || !active.closest("[data-notion-editor]")) {
+        setEditingBlockId((curr) => (curr === blockId ? null : curr));
+      }
+    }, 150);
+  };
 
   const updateBlock = (id: string, updates: Partial<NotionBlock>) => {
     setBlocks((prev) => {
       const next = prev.map((b) => (b.id === id ? { ...b, ...updates } : b));
+      saveLocalStorageDraft(pageId, next, false);
       triggerAutoSave(next);
       return next;
     });
@@ -157,6 +264,7 @@ export function NotionBlockEditor({
       } else {
         next.push(newBlock);
       }
+      saveLocalStorageDraft(pageId, next, false);
       triggerAutoSave(next);
       return next;
     });
@@ -180,12 +288,14 @@ export function NotionBlockEditor({
           type: "paragraph",
           content: "",
         };
+        saveLocalStorageDraft(pageId, [emptyBlock], false);
         triggerAutoSave([emptyBlock]);
         setEditingBlockId(emptyBlock.id);
         return [emptyBlock];
       }
       const idx = prev.findIndex((b) => b.id === id);
       const next = prev.filter((b) => b.id !== id);
+      saveLocalStorageDraft(pageId, next, false);
       triggerAutoSave(next);
 
       // Focus previous or next block
@@ -216,6 +326,7 @@ export function NotionBlockEditor({
           language: newType === "code" ? b.language || "typescript" : undefined,
         };
       });
+      saveLocalStorageDraft(pageId, next, false);
       triggerAutoSave(next);
       return next;
     });
@@ -421,6 +532,7 @@ export function NotionBlockEditor({
 
   return (
     <div
+      data-notion-editor="true"
       className={`relative w-full max-w-3xl mx-auto py-1 transition-colors duration-200 ${fontFamilyClass} ${fontSizeClass} ${lineHeightClass}`}
     >
       {/* Auto-save status indicator */}
@@ -432,6 +544,8 @@ export function NotionBlockEditor({
                 ? "bg-amber-100 text-amber-800"
                 : savingStatus === "saved"
                 ? "text-stone-400 opacity-60"
+                : savingStatus === "offline_saved"
+                ? "bg-emerald-50 text-emerald-700 font-semibold border border-emerald-200/50"
                 : "bg-red-50 text-red-600"
             }`}
           >
@@ -439,7 +553,9 @@ export function NotionBlockEditor({
               ? "Guardando..."
               : savingStatus === "saved"
               ? "Guardado ✓"
-              : "Sin guardar"}
+              : savingStatus === "offline_saved"
+              ? "Guardado en dispositivo ⚡"
+              : "Guardando..."}
           </span>
         </div>
       )}
@@ -614,9 +730,7 @@ export function NotionBlockEditor({
                           }}
                           readOnly={readOnly}
                           value={block.content}
-                          onBlur={() => {
-                            if (!slashMenu) setEditingBlockId(null);
-                          }}
+                          onBlur={(e) => handleBlur(block.id, e)}
                           onChange={(e) => handleInput(e, block)}
                           onKeyDown={(e) => handleKeyDown(e, block, index)}
                           placeholder="Nota importante o punto clave..."
@@ -644,9 +758,7 @@ export function NotionBlockEditor({
                         }}
                         readOnly={readOnly}
                         value={block.content}
-                        onBlur={() => {
-                          if (!slashMenu) setEditingBlockId(null);
-                        }}
+                        onBlur={(e) => handleBlur(block.id, e)}
                         onChange={(e) => handleInput(e, block)}
                         onKeyDown={(e) => handleKeyDown(e, block, index)}
                         placeholder="Cita memorable o referencia teórica..."
@@ -683,9 +795,7 @@ export function NotionBlockEditor({
                           }}
                           readOnly={readOnly}
                           value={block.content}
-                          onBlur={() => {
-                            if (!slashMenu) setEditingBlockId(null);
-                          }}
+                          onBlur={(e) => handleBlur(block.id, e)}
                           onChange={(e) => handleInput(e, block)}
                           onKeyDown={(e) => handleKeyDown(e, block, index)}
                           placeholder="Tarea o práctica pendiente..."
@@ -716,9 +826,7 @@ export function NotionBlockEditor({
                           }}
                           readOnly={readOnly}
                           value={block.content}
-                          onBlur={() => {
-                            if (!slashMenu) setEditingBlockId(null);
-                          }}
+                          onBlur={(e) => handleBlur(block.id, e)}
                           onChange={(e) => handleInput(e, block)}
                           onKeyDown={(e) => handleKeyDown(e, block, index)}
                           placeholder="Punto clave..."
@@ -747,9 +855,7 @@ export function NotionBlockEditor({
                           }}
                           readOnly={readOnly}
                           value={block.content}
-                          onBlur={() => {
-                            if (!slashMenu) setEditingBlockId(null);
-                          }}
+                          onBlur={(e) => handleBlur(block.id, e)}
                           onChange={(e) => handleInput(e, block)}
                           onKeyDown={(e) => handleKeyDown(e, block, index)}
                           placeholder="Paso ordenado..."
@@ -774,9 +880,7 @@ export function NotionBlockEditor({
                         }}
                         readOnly={readOnly}
                         value={block.content}
-                        onBlur={() => {
-                          if (!slashMenu) setEditingBlockId(null);
-                        }}
+                        onBlur={(e) => handleBlur(block.id, e)}
                         onChange={(e) => handleInput(e, block)}
                         onKeyDown={(e) => handleKeyDown(e, block, index)}
                         placeholder={
