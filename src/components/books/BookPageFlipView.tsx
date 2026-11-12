@@ -65,6 +65,11 @@ export function BookPageFlipView({ book }: BookPageFlipViewProps) {
   const [isPending, startTransition] = useTransition();
 
   // Current page state
+  const [pages, setPages] = useState<BookPageData[]>(book.pages);
+  useEffect(() => {
+    setPages(book.pages);
+  }, [book.pages]);
+
   const [currentPageIndex, setCurrentPageIndex] = useState(0);
   const [isFlipping, setIsFlipping] = useState(false);
   const [flipDirection, setFlipDirection] = useState<"next" | "prev">("next");
@@ -87,7 +92,7 @@ export function BookPageFlipView({ book }: BookPageFlipViewProps) {
     coverGradient: book.coverGradient,
   });
 
-  const sortedPages = [...book.pages].sort((a, b) => a.pageNumber - b.pageNumber);
+  const sortedPages = [...pages].sort((a, b) => a.pageNumber - b.pageNumber);
   const totalPages = sortedPages.length;
 
   const activePage = sortedPages[currentPageIndex] || sortedPages[0];
@@ -331,6 +336,117 @@ export function BookPageFlipView({ book }: BookPageFlipViewProps) {
       handlePrevPage,
       router,
     ]
+  );
+
+  // Jalar contenido de la página siguiente al presionar Supr (Delete) al final de una hoja (estilo Word)
+  const handlePullFromNextPage = useCallback(
+    (fromPageId: string, currentBlocks: NotionBlock[], currentBlockId: string) => {
+      const fromIndex = sortedPages.findIndex((p) => p.id === fromPageId);
+      if (fromIndex === -1 || fromIndex >= sortedPages.length - 1) return;
+
+      const nextPage = sortedPages[fromIndex + 1];
+
+      // Leer la versión más reciente de la página siguiente (draft localStorage si existe o DB)
+      let nextBlocks: NotionBlock[] = [];
+      try {
+        const rawDraft = localStorage.getItem(`misapuntesu_book_page_draft_${nextPage.id}`);
+        if (rawDraft) {
+          const parsedDraft = JSON.parse(rawDraft);
+          if (Array.isArray(parsedDraft?.blocks) && parsedDraft.blocks.length > 0) {
+            nextBlocks = parsedDraft.blocks;
+          }
+        }
+      } catch {
+        // Ignorar error de lectura localStorage
+      }
+      if (nextBlocks.length === 0) {
+        nextBlocks = parseBlocks(nextPage.blocksJson);
+      }
+
+      const isNextEmpty =
+        nextBlocks.length === 0 ||
+        (nextBlocks.length === 1 && nextBlocks[0].content.trim() === "");
+
+      if (isNextEmpty) {
+        // Eliminar hoja siguiente vacía
+        try {
+          localStorage.removeItem(`misapuntesu_book_page_draft_${nextPage.id}`);
+        } catch {}
+        setPages((prev) => prev.filter((p) => p.id !== nextPage.id));
+        startTransition(async () => {
+          await deleteBookPageAction(nextPage.id);
+          router.refresh();
+        });
+        return;
+      }
+
+      const pulledBlock = nextBlocks[0];
+      const remainingNextBlocks = nextBlocks.slice(1);
+      const lastCurrentBlock = currentBlocks[currentBlocks.length - 1];
+
+      let newFromBlocks: NotionBlock[];
+      let focusBlockId = currentBlockId;
+      let cursorPos = lastCurrentBlock ? lastCurrentBlock.content.length : 0;
+
+      if (lastCurrentBlock && lastCurrentBlock.content === "") {
+        newFromBlocks = [...currentBlocks.slice(0, -1), pulledBlock];
+        focusBlockId = pulledBlock.id;
+        cursorPos = 0;
+      } else {
+        newFromBlocks = [...currentBlocks, pulledBlock];
+      }
+
+      // Actualizar estado inmediato de la hoja actual
+      setPages((prev) =>
+        prev
+          .map((p) => {
+            if (p.id === fromPageId) {
+              return { ...p, blocksJson: JSON.stringify(newFromBlocks) };
+            }
+            if (p.id === nextPage.id && remainingNextBlocks.length > 0) {
+              return { ...p, blocksJson: JSON.stringify(remainingNextBlocks) };
+            }
+            return p;
+          })
+          .filter((p) => !(p.id === nextPage.id && remainingNextBlocks.length === 0))
+      );
+
+      window.dispatchEvent(
+        new CustomEvent("book-page-blocks-updated", {
+          detail: {
+            pageId: fromPageId,
+            blocks: newFromBlocks,
+            focusBlockId,
+            cursorPos,
+          },
+        })
+      );
+
+      if (remainingNextBlocks.length === 0) {
+        try {
+          localStorage.removeItem(`misapuntesu_book_page_draft_${nextPage.id}`);
+        } catch {}
+        startTransition(async () => {
+          await updateBookPageBlocksAction(fromPageId, { blocks: newFromBlocks });
+          await deleteBookPageAction(nextPage.id);
+          router.refresh();
+        });
+      } else {
+        window.dispatchEvent(
+          new CustomEvent("book-page-blocks-updated", {
+            detail: {
+              pageId: nextPage.id,
+              blocks: remainingNextBlocks,
+            },
+          })
+        );
+        startTransition(async () => {
+          await updateBookPageBlocksAction(fromPageId, { blocks: newFromBlocks });
+          await updateBookPageBlocksAction(nextPage.id, { blocks: remainingNextBlocks });
+        });
+      }
+    },
+    [sortedPages, router]
   );
 
   // Toggle bookmark action
@@ -579,6 +695,7 @@ export function BookPageFlipView({ book }: BookPageFlipViewProps) {
                     onSave={(blocks) => handleSaveBlocks(leftPage.id, blocks)}
                     onPageOverflow={() => handlePageOverflow(leftPage.id)}
                     onPageUnderflow={(isEmpty) => handlePageUnderflow(leftPage.id, isEmpty)}
+                    onPullNextPage={(blocks, blockId) => handlePullFromNextPage(leftPage.id, blocks, blockId)}
                     fontFamilyClass={fontFamilyClasses}
                     fontSizeClass={fontSizeClasses}
                     lineHeightClass={lineHeightClasses}
@@ -618,6 +735,7 @@ export function BookPageFlipView({ book }: BookPageFlipViewProps) {
                         onSave={(blocks) => handleSaveBlocks(rightPage.id, blocks)}
                         onPageOverflow={() => handlePageOverflow(rightPage.id)}
                         onPageUnderflow={(isEmpty) => handlePageUnderflow(rightPage.id, isEmpty)}
+                        onPullNextPage={(blocks, blockId) => handlePullFromNextPage(rightPage.id, blocks, blockId)}
                         fontFamilyClass={fontFamilyClasses}
                         fontSizeClass={fontSizeClasses}
                         lineHeightClass={lineHeightClasses}

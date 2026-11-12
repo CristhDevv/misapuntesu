@@ -40,6 +40,7 @@ interface NotionBlockEditorProps {
   onSave: (blocks: NotionBlock[]) => Promise<void>;
   onPageOverflow?: () => void;
   onPageUnderflow?: (isEmptyPage: boolean) => void;
+  onPullNextPage?: (currentBlocks: NotionBlock[], currentBlockId: string) => void;
   readOnly?: boolean;
   fontFamilyClass?: string;
   fontSizeClass?: string;
@@ -100,6 +101,7 @@ export function NotionBlockEditor({
   onSave,
   onPageOverflow,
   onPageUnderflow,
+  onPullNextPage,
   readOnly = false,
   fontFamilyClass = "font-sans",
   fontSizeClass = "text-base",
@@ -150,6 +152,43 @@ export function NotionBlockEditor({
       setEditingBlockId(null);
     }
   }, [pageId, initialBlocks]);
+
+  // Sincronización instantánea cuando otra página transfiere/recibe bloques (Supr / Backspace entre páginas)
+  useEffect(() => {
+    const handleExternalUpdate = (e: Event) => {
+      const custom = e as CustomEvent<{
+        pageId: string;
+        blocks: NotionBlock[];
+        focusBlockId?: string;
+        cursorPos?: number;
+      }>;
+      if (custom.detail?.pageId === pageId) {
+        const nextBlocks =
+          custom.detail.blocks.length > 0
+            ? custom.detail.blocks
+            : [{ id: "b_" + Date.now() + "_1", type: "paragraph" as const, content: "" }];
+        setBlocks(nextBlocks);
+        saveLocalStorageDraft(pageId, nextBlocks, true);
+
+        if (custom.detail.focusBlockId) {
+          const targetId = custom.detail.focusBlockId;
+          const pos = custom.detail.cursorPos ?? 0;
+          setEditingBlockId(targetId);
+          setTimeout(() => {
+            const el = textareaRefs.current.get(targetId);
+            if (el) {
+              el.focus();
+              el.setSelectionRange(pos, pos);
+              autoResize(el);
+            }
+          }, 40);
+        }
+      }
+    };
+
+    window.addEventListener("book-page-blocks-updated", handleExternalUpdate);
+    return () => window.removeEventListener("book-page-blocks-updated", handleExternalUpdate);
+  }, [pageId]);
 
   const [savingStatus, setSavingStatus] = useState<"saved" | "saving" | "unsaved" | "offline_saved">("saved");
   const [slashMenu, setSlashMenu] = useState<{
@@ -890,6 +929,56 @@ export function NotionBlockEditor({
           }
         }, 50);
         return;
+      }
+    }
+
+    // Supr (Delete) al final de bloque o al final de página (estilo Word)
+    if (e.key === "Delete") {
+      const target = e.currentTarget;
+      const isAtEnd =
+        target.selectionStart === block.content.length &&
+        target.selectionEnd === block.content.length;
+
+      if (isAtEnd) {
+        // 1. Si hay otro bloque debajo en esta misma página: unir con el bloque siguiente
+        if (index < blocks.length - 1) {
+          e.preventDefault();
+          const nextBlock = blocks[index + 1];
+          const cursorPos = block.content.length;
+          const combinedContent = block.content + nextBlock.content;
+          const nextType =
+            block.content === "" && nextBlock.type !== "paragraph"
+              ? nextBlock.type
+              : block.type;
+
+          setBlocks((prev) => {
+            const next = prev
+              .filter((b) => b.id !== nextBlock.id)
+              .map((b) =>
+                b.id === block.id ? { ...b, type: nextType, content: combinedContent } : b
+              );
+            saveLocalStorageDraft(pageId, next, false);
+            triggerAutoSave(next);
+            return next;
+          });
+
+          setTimeout(() => {
+            const currEl = textareaRefs.current.get(block.id);
+            if (currEl) {
+              currEl.focus();
+              currEl.setSelectionRange(cursorPos, cursorPos);
+              autoResize(currEl);
+            }
+          }, 30);
+          return;
+        }
+
+        // 2. Si estamos en el último bloque de la página: traer el primer bloque de la página siguiente
+        if (onPullNextPage) {
+          e.preventDefault();
+          onPullNextPage(blocks, block.id);
+          return;
+        }
       }
     }
 
