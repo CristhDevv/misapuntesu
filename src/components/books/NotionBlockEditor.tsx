@@ -804,6 +804,9 @@ export function NotionBlockEditor({
                 {children}
               </span>
             ),
+            span: ({ children, className }) => (
+              <span className={className}>{children}</span>
+            ),
             strong: ({ children }) => (
               <strong className="font-bold text-inherit">{children}</strong>
             ),
@@ -851,11 +854,11 @@ export function NotionBlockEditor({
       data-notion-editor="true"
       data-page-id={pageId}
       onMouseMove={handleEditorMouseMove}
-      className={`relative w-full max-w-3xl mx-auto py-1 h-full flex flex-col justify-between transition-colors duration-200 ${fontFamilyClass} ${fontSizeClass} ${lineHeightClass}`}
+      className={`relative w-full max-w-3xl mx-auto py-1 h-full flex flex-col justify-start transition-colors duration-200 ${fontFamilyClass} ${fontSizeClass} ${lineHeightClass}`}
     >
       {/* Auto-save status indicator */}
       {!readOnly && (
-        <div className="flex items-center justify-end mb-1 pr-1">
+        <div className="flex items-center justify-end mb-1 pr-1 shrink-0">
           <span
             className={`text-[10px] font-medium tracking-tight px-1.5 py-0.5 rounded-full transition-all duration-300 ${
               savingStatus === "saving"
@@ -879,7 +882,22 @@ export function NotionBlockEditor({
       )}
 
       {/* Blocks List */}
-      <div className="space-y-1">
+      <div
+        className="space-y-1 flex-1 min-h-0 w-full cursor-text"
+        onClick={(e) => {
+          if (e.target === e.currentTarget && blocks.length > 0) {
+            const lastBlock = blocks[blocks.length - 1];
+            setEditingBlockId(lastBlock.id);
+            setTimeout(() => {
+              const el = textareaRefs.current.get(lastBlock.id);
+              if (el) {
+                el.focus();
+                el.setSelectionRange(el.value.length, el.value.length);
+              }
+            }, 30);
+          }
+        }}
+      >
         {blocks.map((block, index) => {
           const isCallout = block.type === "callout";
           const isQuote = block.type === "quote";
@@ -1346,7 +1364,7 @@ export function NotionBlockEditor({
       {floatingToolbar && (
         <div
           data-notion-menu
-          className="fixed z-50 flex items-center gap-0.5 p-1 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-xl border border-black/10 dark:border-white/15 rounded-2xl shadow-2xl animate-in fade-in zoom-in-95 duration-150 select-none max-w-[96vw] overflow-x-auto no-scrollbar"
+          className="fixed z-50 flex items-center gap-0.5 p-1 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-xl border border-black/10 dark:border-white/15 rounded-2xl shadow-2xl animate-in fade-in zoom-in-95 duration-150 select-none overflow-visible"
           style={{
             top: floatingToolbar.top,
             left: floatingToolbar.left,
@@ -1380,7 +1398,7 @@ export function NotionBlockEditor({
             {activeSubmenu === "type" && (
               <div
                 data-notion-menu
-                className="absolute left-0 top-9 z-50 w-48 bg-white/95 dark:bg-zinc-800/95 backdrop-blur-xl border border-black/10 dark:border-white/15 rounded-xl shadow-xl p-1 animate-in fade-in zoom-in-95 duration-100 space-y-0.5"
+                className="absolute left-0 top-full mt-1.5 z-[70] w-48 bg-white dark:bg-zinc-800 backdrop-blur-xl border border-black/10 dark:border-white/15 rounded-xl shadow-2xl p-1 animate-in fade-in zoom-in-95 duration-100 space-y-0.5"
               >
                 <div className="px-2 py-1 text-[10px] font-semibold text-stone-400 uppercase tracking-wider">
                   Jerarquía y Estilo
@@ -1429,7 +1447,7 @@ export function NotionBlockEditor({
             {activeSubmenu === "font" && (
               <div
                 data-notion-menu
-                className="absolute left-0 top-9 z-50 w-44 bg-white/95 dark:bg-zinc-800/95 backdrop-blur-xl border border-black/10 dark:border-white/15 rounded-xl shadow-xl p-1 animate-in fade-in zoom-in-95 duration-100 space-y-0.5"
+                className="absolute left-0 top-full mt-1.5 z-[70] w-44 bg-white dark:bg-zinc-800 backdrop-blur-xl border border-black/10 dark:border-white/15 rounded-xl shadow-2xl p-1 animate-in fade-in zoom-in-95 duration-100 space-y-0.5"
               >
                 <button
                   type="button"
@@ -1481,7 +1499,7 @@ export function NotionBlockEditor({
             {activeSubmenu === "size" && (
               <div
                 data-notion-menu
-                className="absolute left-0 top-9 z-50 w-40 bg-white/95 dark:bg-zinc-800/95 backdrop-blur-xl border border-black/10 dark:border-white/15 rounded-xl shadow-xl p-1 animate-in fade-in zoom-in-95 duration-100 space-y-0.5"
+                className="absolute left-0 top-full mt-1.5 z-[70] w-40 bg-white dark:bg-zinc-800 backdrop-blur-xl border border-black/10 dark:border-white/15 rounded-xl shadow-2xl p-1 animate-in fade-in zoom-in-95 duration-100 space-y-0.5"
               >
                 <button
                   type="button"
@@ -1615,7 +1633,7 @@ export function NotionBlockEditor({
             {activeSubmenu === "highlight" && (
               <div
                 data-notion-menu
-                className="absolute left-0 top-9 z-50 bg-white/95 dark:bg-zinc-800/95 backdrop-blur-xl border border-black/10 dark:border-white/15 rounded-xl shadow-xl p-2 animate-in fade-in zoom-in-95 duration-100 flex items-center gap-1.5 min-w-[200px]"
+                className="absolute left-0 top-full mt-1.5 z-[70] bg-white dark:bg-zinc-800 backdrop-blur-xl border border-black/10 dark:border-white/15 rounded-xl shadow-2xl p-2 animate-in fade-in zoom-in-95 duration-100 flex items-center gap-1.5 min-w-[200px]"
               >
                 <button
                   type="button"
@@ -1710,7 +1728,7 @@ export function NotionBlockEditor({
             {activeSubmenu === "color" && (
               <div
                 data-notion-menu
-                className="absolute left-0 top-9 z-50 bg-white/95 dark:bg-zinc-800/95 backdrop-blur-xl border border-black/10 dark:border-white/15 rounded-xl shadow-xl p-2 animate-in fade-in zoom-in-95 duration-100 flex items-center gap-1.5 min-w-[200px]"
+                className="absolute left-0 top-full mt-1.5 z-[70] bg-white dark:bg-zinc-800 backdrop-blur-xl border border-black/10 dark:border-white/15 rounded-xl shadow-2xl p-2 animate-in fade-in zoom-in-95 duration-100 flex items-center gap-1.5 min-w-[200px]"
               >
                 <button
                   type="button"
@@ -1778,7 +1796,7 @@ export function NotionBlockEditor({
           {activeSubmenu === "link" && (
             <div
               data-notion-menu
-              className="absolute left-0 top-11 z-50 bg-white/95 dark:bg-zinc-800/95 backdrop-blur-xl border border-black/10 dark:border-white/15 rounded-xl shadow-xl p-1.5 flex items-center gap-1.5 min-w-[280px] animate-in fade-in zoom-in-95 duration-100"
+              className="absolute left-0 top-full mt-1.5 z-[70] bg-white dark:bg-zinc-800 backdrop-blur-xl border border-black/10 dark:border-white/15 rounded-xl shadow-2xl p-1.5 flex items-center gap-1.5 min-w-[280px] animate-in fade-in zoom-in-95 duration-100"
             >
               <input
                 type="url"
