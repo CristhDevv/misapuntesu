@@ -20,15 +20,25 @@ import {
   Check,
   Copy,
   ChevronDown,
+  Bold,
+  Italic,
+  Underline,
+  Strikethrough,
+  Highlighter,
+  Palette,
+  Link as LinkIcon,
+  Baseline,
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import rehypeRaw from "rehype-raw";
 import { NotionBlock, NOTION_BLOCK_TYPES } from "@/lib/validations";
 
 interface NotionBlockEditorProps {
   initialBlocks: NotionBlock[];
   pageId: string;
   onSave: (blocks: NotionBlock[]) => Promise<void>;
+  onPageOverflow?: () => void;
   readOnly?: boolean;
   fontFamilyClass?: string;
   fontSizeClass?: string;
@@ -87,12 +97,14 @@ export function NotionBlockEditor({
   initialBlocks,
   pageId,
   onSave,
+  onPageOverflow,
   readOnly = false,
   fontFamilyClass = "font-sans",
   fontSizeClass = "text-base",
   lineHeightClass = "leading-relaxed",
   themeMode = "light",
 }: NotionBlockEditorProps) {
+  const editorContainerRef = useRef<HTMLDivElement>(null);
   const [blocks, setBlocks] = useState<NotionBlock[]>(() => {
     const draft = getLocalStorageDraft(pageId);
     if (draft && draft.length > 0) {
@@ -151,6 +163,23 @@ export function NotionBlockEditor({
 
   const [blockMenuId, setBlockMenuId] = useState<string | null>(null);
   const [copiedCodeId, setCopiedCodeId] = useState<string | null>(null);
+
+  // Barra Flotante de Selección (Estilo Editores Famosos: Notion, Medium, Apple Pages)
+  const [floatingToolbar, setFloatingToolbar] = useState<{
+    blockId: string;
+    selectedText: string;
+    selectionStart: number;
+    selectionEnd: number;
+    top: number;
+    left: number;
+  } | null>(null);
+
+  const [activeSubmenu, setActiveSubmenu] = useState<
+    "type" | "font" | "size" | "highlight" | "color" | "link" | null
+  >(null);
+
+  const [linkInputUrl, setLinkInputUrl] = useState("");
+  const mouseCoordsRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
 
   const saveTimerRef = useRef<NodeJS.Timeout | null>(null);
   const textareaRefs = useRef<Map<string, HTMLTextAreaElement>>(new Map());
@@ -235,6 +264,234 @@ export function NotionBlockEditor({
         setEditingBlockId((curr) => (curr === blockId ? null : curr));
       }
     }, 150);
+  };
+
+  const handleEditorMouseMove = (e: React.MouseEvent) => {
+    mouseCoordsRef.current = { x: e.clientX, y: e.clientY };
+  };
+
+  const handleTextSelect = (
+    blockId: string,
+    e: React.SyntheticEvent<HTMLTextAreaElement>
+  ) => {
+    const target = e.currentTarget;
+    const start = target.selectionStart;
+    const end = target.selectionEnd;
+
+    if (start !== end && end > start) {
+      const selectedText = target.value.substring(start, end);
+      if (!selectedText.trim()) {
+        setFloatingToolbar(null);
+        setActiveSubmenu(null);
+        return;
+      }
+
+      const rect = target.getBoundingClientRect();
+      let clientX = mouseCoordsRef.current.x || (rect.left + rect.width / 2);
+      let clientY = mouseCoordsRef.current.y || rect.top;
+
+      const sel = window.getSelection();
+      if (sel && !sel.isCollapsed && sel.rangeCount > 0) {
+        const r = sel.getRangeAt(0).getBoundingClientRect();
+        if (r.width > 0 && r.height > 0) {
+          clientX = r.left + r.width / 2;
+          clientY = r.top;
+        }
+      }
+
+      const toolbarWidth = 440;
+      const left = Math.max(
+        10,
+        Math.min(window.innerWidth - toolbarWidth - 10, clientX - toolbarWidth / 2)
+      );
+      const top = clientY > 70 ? clientY - 54 : clientY + 36;
+
+      setFloatingToolbar({
+        blockId,
+        selectedText,
+        selectionStart: start,
+        selectionEnd: end,
+        top,
+        left,
+      });
+      setActiveSubmenu(null);
+    } else {
+      if (!activeSubmenu) {
+        setFloatingToolbar(null);
+      }
+    }
+  };
+
+  const applyInlineFormat = (prefix: string, suffix: string = prefix) => {
+    if (!floatingToolbar) return;
+    const { blockId, selectionStart, selectionEnd, selectedText } = floatingToolbar;
+
+    setBlocks((prev) => {
+      const next = prev.map((b) => {
+        if (b.id !== blockId) return b;
+        const content = b.content;
+        const before = content.slice(0, selectionStart);
+        const after = content.slice(selectionEnd);
+
+        const prefixLen = prefix.length;
+        const suffixLen = suffix.length;
+        const hasPrefixBefore = before.endsWith(prefix);
+        const hasSuffixAfter = after.startsWith(suffix);
+
+        let newContent: string;
+        let newStart: number;
+        let newEnd: number;
+
+        if (hasPrefixBefore && hasSuffixAfter) {
+          newContent = before.slice(0, -prefixLen) + selectedText + after.slice(suffixLen);
+          newStart = selectionStart - prefixLen;
+          newEnd = newStart + selectedText.length;
+        } else if (
+          selectedText.startsWith(prefix) &&
+          selectedText.endsWith(suffix) &&
+          selectedText.length >= prefixLen + suffixLen
+        ) {
+          const unwrapped = selectedText.slice(prefixLen, -suffixLen);
+          newContent = before + unwrapped + after;
+          newStart = selectionStart;
+          newEnd = newStart + unwrapped.length;
+        } else {
+          const formatted = `${prefix}${selectedText}${suffix}`;
+          newContent = before + formatted + after;
+          newStart = selectionStart;
+          newEnd = selectionStart + formatted.length;
+        }
+
+        setTimeout(() => {
+          const el = textareaRefs.current.get(blockId);
+          if (el) {
+            el.focus();
+            el.setSelectionRange(newStart, newEnd);
+            autoResize(el);
+          }
+        }, 30);
+
+        return { ...b, content: newContent };
+      });
+
+      saveLocalStorageDraft(pageId, next, false);
+      triggerAutoSave(next);
+      return next;
+    });
+
+    setFloatingToolbar(null);
+    setActiveSubmenu(null);
+  };
+
+  const applyHtmlWrap = (openTag: string, closeTag: string) => {
+    if (!floatingToolbar) return;
+    const { blockId, selectionStart, selectionEnd, selectedText } = floatingToolbar;
+
+    setBlocks((prev) => {
+      const next = prev.map((b) => {
+        if (b.id !== blockId) return b;
+        const content = b.content;
+        const before = content.slice(0, selectionStart);
+        const after = content.slice(selectionEnd);
+
+        let newContent: string;
+        let newStart: number;
+        let newEnd: number;
+
+        if (before.endsWith(openTag) && after.startsWith(closeTag)) {
+          newContent = before.slice(0, -openTag.length) + selectedText + after.slice(closeTag.length);
+          newStart = selectionStart - openTag.length;
+          newEnd = newStart + selectedText.length;
+        } else {
+          const cleanedText = selectedText
+            .replace(/<\/?mark[^>]*>/gi, "")
+            .replace(/<\/?span[^>]*>/gi, "")
+            .replace(/<\/?u>/gi, "");
+          const formatted = `${openTag}${cleanedText}${closeTag}`;
+          newContent = before + formatted + after;
+          newStart = selectionStart;
+          newEnd = selectionStart + formatted.length;
+        }
+
+        setTimeout(() => {
+          const el = textareaRefs.current.get(blockId);
+          if (el) {
+            el.focus();
+            el.setSelectionRange(newStart, newEnd);
+            autoResize(el);
+          }
+        }, 30);
+
+        return { ...b, content: newContent };
+      });
+
+      saveLocalStorageDraft(pageId, next, false);
+      triggerAutoSave(next);
+      return next;
+    });
+
+    setFloatingToolbar(null);
+    setActiveSubmenu(null);
+  };
+
+  const removeFormatting = () => {
+    if (!floatingToolbar) return;
+    const { blockId, selectionStart, selectionEnd, selectedText } = floatingToolbar;
+
+    setBlocks((prev) => {
+      const next = prev.map((b) => {
+        if (b.id !== blockId) return b;
+        const content = b.content;
+        const before = content.slice(0, selectionStart);
+        const after = content.slice(selectionEnd);
+
+        const stripped = selectedText
+          .replace(/\*\*(.*?)\*\*/g, "$1")
+          .replace(/\*(.*?)\*/g, "$1")
+          .replace(/~~(.*?)~~/g, "$1")
+          .replace(/`([^`]+)`/g, "$1")
+          .replace(/\[(.*?)\]\(.*?\)/g, "$1")
+          .replace(/<\/?mark[^>]*>/gi, "")
+          .replace(/<\/?span[^>]*>/gi, "")
+          .replace(/<\/?u>/gi, "");
+
+        const newContent = before + stripped + after;
+        const newStart = selectionStart;
+        const newEnd = selectionStart + stripped.length;
+
+        setTimeout(() => {
+          const el = textareaRefs.current.get(blockId);
+          if (el) {
+            el.focus();
+            el.setSelectionRange(newStart, newEnd);
+            autoResize(el);
+          }
+        }, 30);
+
+        return { ...b, content: newContent };
+      });
+
+      saveLocalStorageDraft(pageId, next, false);
+      triggerAutoSave(next);
+      return next;
+    });
+
+    setFloatingToolbar(null);
+    setActiveSubmenu(null);
+  };
+
+  const applyLink = (url: string) => {
+    if (!floatingToolbar || !url.trim()) return;
+    const cleanUrl = url.trim().startsWith("http") ? url.trim() : `https://${url.trim()}`;
+    applyInlineFormat(`[`, `](${cleanUrl})`);
+    setLinkInputUrl("");
+  };
+
+  const changeBlockTypeFromToolbar = (newType: NotionBlock["type"]) => {
+    if (!floatingToolbar) return;
+    changeBlockType(floatingToolbar.blockId, newType);
+    setFloatingToolbar(null);
+    setActiveSubmenu(null);
   };
 
   const updateBlock = (id: string, updates: Partial<NotionBlock>) => {
@@ -406,6 +663,21 @@ export function NotionBlockEditor({
         return;
       }
       e.preventDefault();
+
+      // Paginación física de libro: si el contenido ya llena la hoja física o estamos cerca del final
+      const container = editorContainerRef.current?.parentElement;
+      if (container && onPageOverflow) {
+        const containerRect = container.getBoundingClientRect();
+        const targetRect = e.currentTarget.getBoundingClientRect();
+        const isNearBottom = targetRect.bottom >= containerRect.bottom - 45;
+        const isContentFull = container.scrollHeight >= container.clientHeight - 15;
+
+        if (isNearBottom || isContentFull) {
+          onPageOverflow();
+          return;
+        }
+      }
+
       const nextType = block.type === "todo" ? "todo" : block.type === "bullet" ? "bullet" : block.type === "numbered" ? "numbered" : "paragraph";
       insertBlockAfter(block.id, nextType);
       return;
@@ -460,6 +732,14 @@ export function NotionBlockEditor({
     autoResize(e.target);
     updateBlock(block.id, { content: val });
 
+    // Detección de límite físico de hoja al escribir continuamente
+    const container = editorContainerRef.current?.parentElement;
+    if (container && onPageOverflow) {
+      if (container.scrollHeight > container.clientHeight + 15) {
+        onPageOverflow();
+      }
+    }
+
     // Detect slash command
     if (val.startsWith("/")) {
       const rect = e.target.getBoundingClientRect();
@@ -483,6 +763,10 @@ export function NotionBlockEditor({
       if (!target.closest("[data-notion-menu]")) {
         setSlashMenu(null);
         setBlockMenuId(null);
+        setActiveSubmenu(null);
+        if (!target.closest("textarea")) {
+          setFloatingToolbar(null);
+        }
       }
     };
     window.addEventListener("click", handleGlobalClick);
@@ -507,24 +791,55 @@ export function NotionBlockEditor({
 
   // Helper for rendering rich markdown when not editing
   const renderMarkdownFormatted = (content: string, extraClasses = "") => {
+    // Preservar saltos de renglón simples (Shift+Enter estilo Word) para que nunca se junten al salir del modo edición
+    const formattedContent = content.replace(/([^\n])\n([^\n])/g, "$1  \n$2");
     return (
-      <div className={`prose-sm ${extraClasses}`}>
+      <div className={`prose-sm ${extraClasses} whitespace-pre-wrap break-words leading-relaxed`}>
         <ReactMarkdown
           remarkPlugins={[remarkGfm]}
+          rehypePlugins={[rehypeRaw]}
           components={{
-            p: ({ children }) => <span className="inline">{children}</span>,
+            p: ({ children }) => (
+              <span className="inline whitespace-pre-wrap break-words leading-relaxed">
+                {children}
+              </span>
+            ),
             strong: ({ children }) => (
               <strong className="font-bold text-inherit">{children}</strong>
             ),
             em: ({ children }) => <em className="italic">{children}</em>,
+            u: ({ children }) => (
+              <u className="underline decoration-[#007AFF] underline-offset-2">{children}</u>
+            ),
+            del: ({ children }) => <del className="line-through text-stone-400">{children}</del>,
+            mark: ({ children, className }) => (
+              <mark
+                className={`rounded px-1 py-0.5 font-medium ${
+                  className || "bg-amber-200/90 text-amber-950"
+                }`}
+              >
+                {children}
+              </mark>
+            ),
             code: ({ children }) => (
               <code className="bg-black/5 dark:bg-white/10 px-1 py-0.5 rounded font-mono text-xs text-[#007AFF]">
                 {children}
               </code>
             ),
+            a: ({ href, children }) => (
+              <a
+                href={href}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-[#007AFF] underline underline-offset-2 hover:text-blue-700 transition-colors"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {children}
+              </a>
+            ),
           }}
         >
-          {content}
+          {formattedContent}
         </ReactMarkdown>
       </div>
     );
@@ -532,8 +847,11 @@ export function NotionBlockEditor({
 
   return (
     <div
+      ref={editorContainerRef}
       data-notion-editor="true"
-      className={`relative w-full max-w-3xl mx-auto py-1 transition-colors duration-200 ${fontFamilyClass} ${fontSizeClass} ${lineHeightClass}`}
+      data-page-id={pageId}
+      onMouseMove={handleEditorMouseMove}
+      className={`relative w-full max-w-3xl mx-auto py-1 h-full flex flex-col justify-between transition-colors duration-200 ${fontFamilyClass} ${fontSizeClass} ${lineHeightClass}`}
     >
       {/* Auto-save status indicator */}
       {!readOnly && (
@@ -703,6 +1021,9 @@ export function NotionBlockEditor({
                       }}
                       readOnly={readOnly}
                       value={block.content}
+                      onSelect={(e) => handleTextSelect(block.id, e)}
+                      onMouseUp={(e) => handleTextSelect(block.id, e)}
+                      onKeyUp={(e) => handleTextSelect(block.id, e)}
                       onChange={(e) => handleInput(e, block)}
                       onKeyDown={(e) => handleKeyDown(e, block, index)}
                       placeholder="// Escribe tu código aquí..."
@@ -731,6 +1052,9 @@ export function NotionBlockEditor({
                           readOnly={readOnly}
                           value={block.content}
                           onBlur={(e) => handleBlur(block.id, e)}
+                          onSelect={(e) => handleTextSelect(block.id, e)}
+                          onMouseUp={(e) => handleTextSelect(block.id, e)}
+                          onKeyUp={(e) => handleTextSelect(block.id, e)}
                           onChange={(e) => handleInput(e, block)}
                           onKeyDown={(e) => handleKeyDown(e, block, index)}
                           placeholder="Nota importante o punto clave..."
@@ -759,6 +1083,9 @@ export function NotionBlockEditor({
                         readOnly={readOnly}
                         value={block.content}
                         onBlur={(e) => handleBlur(block.id, e)}
+                        onSelect={(e) => handleTextSelect(block.id, e)}
+                        onMouseUp={(e) => handleTextSelect(block.id, e)}
+                        onKeyUp={(e) => handleTextSelect(block.id, e)}
                         onChange={(e) => handleInput(e, block)}
                         onKeyDown={(e) => handleKeyDown(e, block, index)}
                         placeholder="Cita memorable o referencia teórica..."
@@ -796,6 +1123,9 @@ export function NotionBlockEditor({
                           readOnly={readOnly}
                           value={block.content}
                           onBlur={(e) => handleBlur(block.id, e)}
+                          onSelect={(e) => handleTextSelect(block.id, e)}
+                          onMouseUp={(e) => handleTextSelect(block.id, e)}
+                          onKeyUp={(e) => handleTextSelect(block.id, e)}
                           onChange={(e) => handleInput(e, block)}
                           onKeyDown={(e) => handleKeyDown(e, block, index)}
                           placeholder="Tarea o práctica pendiente..."
@@ -827,6 +1157,9 @@ export function NotionBlockEditor({
                           readOnly={readOnly}
                           value={block.content}
                           onBlur={(e) => handleBlur(block.id, e)}
+                          onSelect={(e) => handleTextSelect(block.id, e)}
+                          onMouseUp={(e) => handleTextSelect(block.id, e)}
+                          onKeyUp={(e) => handleTextSelect(block.id, e)}
                           onChange={(e) => handleInput(e, block)}
                           onKeyDown={(e) => handleKeyDown(e, block, index)}
                           placeholder="Punto clave..."
@@ -856,6 +1189,9 @@ export function NotionBlockEditor({
                           readOnly={readOnly}
                           value={block.content}
                           onBlur={(e) => handleBlur(block.id, e)}
+                          onSelect={(e) => handleTextSelect(block.id, e)}
+                          onMouseUp={(e) => handleTextSelect(block.id, e)}
+                          onKeyUp={(e) => handleTextSelect(block.id, e)}
                           onChange={(e) => handleInput(e, block)}
                           onKeyDown={(e) => handleKeyDown(e, block, index)}
                           placeholder="Paso ordenado..."
@@ -881,6 +1217,9 @@ export function NotionBlockEditor({
                         readOnly={readOnly}
                         value={block.content}
                         onBlur={(e) => handleBlur(block.id, e)}
+                        onSelect={(e) => handleTextSelect(block.id, e)}
+                        onMouseUp={(e) => handleTextSelect(block.id, e)}
+                        onKeyUp={(e) => handleTextSelect(block.id, e)}
                         onChange={(e) => handleInput(e, block)}
                         onKeyDown={(e) => handleKeyDown(e, block, index)}
                         placeholder={
@@ -1000,6 +1339,471 @@ export function NotionBlockEditor({
               );
             })}
           </div>
+        </div>
+      )}
+
+      {/* Barra Flotante de Selección (Estilo Editores Famosos: Notion, Medium, Apple Pages) */}
+      {floatingToolbar && (
+        <div
+          data-notion-menu
+          className="fixed z-50 flex items-center gap-0.5 p-1 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-xl border border-black/10 dark:border-white/15 rounded-2xl shadow-2xl animate-in fade-in zoom-in-95 duration-150 select-none max-w-[96vw] overflow-x-auto no-scrollbar"
+          style={{
+            top: floatingToolbar.top,
+            left: floatingToolbar.left,
+          }}
+        >
+          {/* 1. Selector de Tipo / Jerarquía / Tamaño principal */}
+          <div className="relative">
+            <button
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => setActiveSubmenu((prev) => (prev === "type" ? null : "type"))}
+              className={`flex items-center gap-1 px-2 py-1 rounded-xl text-xs font-semibold transition-all ${
+                activeSubmenu === "type"
+                  ? "bg-blue-50 text-[#007AFF] dark:bg-blue-950/50"
+                  : "text-stone-700 dark:text-zinc-200 hover:bg-stone-100 dark:hover:bg-zinc-800"
+              }`}
+              title="Cambiar tipo de bloque o jerarquía"
+            >
+              <span>
+                {(() => {
+                  const curr = blocks.find((b) => b.id === floatingToolbar.blockId);
+                  if (!curr) return "Texto";
+                  const match = NOTION_BLOCK_TYPES.find((t) => t.type === curr.type);
+                  return match ? match.label : "Texto";
+                })()}
+              </span>
+              <ChevronDown className="w-3 h-3 text-stone-400" />
+            </button>
+
+            {/* Submenú de Tipos de Bloque */}
+            {activeSubmenu === "type" && (
+              <div
+                data-notion-menu
+                className="absolute left-0 top-9 z-50 w-48 bg-white/95 dark:bg-zinc-800/95 backdrop-blur-xl border border-black/10 dark:border-white/15 rounded-xl shadow-xl p-1 animate-in fade-in zoom-in-95 duration-100 space-y-0.5"
+              >
+                <div className="px-2 py-1 text-[10px] font-semibold text-stone-400 uppercase tracking-wider">
+                  Jerarquía y Estilo
+                </div>
+                {NOTION_BLOCK_TYPES.map((bt) => {
+                  const Icon = BLOCK_ICONS[bt.type] || Type;
+                  return (
+                    <button
+                      key={bt.type}
+                      type="button"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => changeBlockTypeFromToolbar(bt.type as NotionBlock["type"])}
+                      className="w-full flex items-center justify-between px-2 py-1.5 rounded-lg text-xs text-stone-700 dark:text-zinc-200 hover:bg-stone-100 dark:hover:bg-zinc-700/60 transition-colors text-left"
+                    >
+                      <div className="flex items-center gap-2">
+                        <Icon className="w-3.5 h-3.5 text-stone-500" />
+                        <span>{bt.label}</span>
+                      </div>
+                      <span className="text-[10px] text-stone-400 font-mono">{bt.shortcut}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          <div className="h-4 w-px bg-black/10 dark:bg-white/10 mx-0.5 shrink-0" />
+
+          {/* 2. Selector de Tipografía / Fuente */}
+          <div className="relative">
+            <button
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => setActiveSubmenu((prev) => (prev === "font" ? null : "font"))}
+              className={`flex items-center gap-1 px-2 py-1 rounded-xl text-xs font-semibold transition-all ${
+                activeSubmenu === "font"
+                  ? "bg-blue-50 text-[#007AFF] dark:bg-blue-950/50"
+                  : "text-stone-700 dark:text-zinc-200 hover:bg-stone-100 dark:hover:bg-zinc-800"
+              }`}
+              title="Tipo de letra / Fuente"
+            >
+              <span>Fuente</span>
+              <ChevronDown className="w-3 h-3 text-stone-400" />
+            </button>
+
+            {activeSubmenu === "font" && (
+              <div
+                data-notion-menu
+                className="absolute left-0 top-9 z-50 w-44 bg-white/95 dark:bg-zinc-800/95 backdrop-blur-xl border border-black/10 dark:border-white/15 rounded-xl shadow-xl p-1 animate-in fade-in zoom-in-95 duration-100 space-y-0.5"
+              >
+                <button
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => applyHtmlWrap('<span class="font-sans">', "</span>")}
+                  className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-sans text-stone-700 dark:text-zinc-200 hover:bg-stone-100 dark:hover:bg-zinc-700/60 text-left"
+                >
+                  <span>Sans (Moderna)</span>
+                </button>
+                <button
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => applyHtmlWrap('<span class="font-serif">', "</span>")}
+                  className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-serif text-stone-700 dark:text-zinc-200 hover:bg-stone-100 dark:hover:bg-zinc-700/60 text-left"
+                >
+                  <span>Serif (Académica)</span>
+                </button>
+                <button
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => applyHtmlWrap('<span class="font-mono">', "</span>")}
+                  className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-mono text-stone-700 dark:text-zinc-200 hover:bg-stone-100 dark:hover:bg-zinc-700/60 text-left"
+                >
+                  <span>Mono (Código)</span>
+                </button>
+              </div>
+            )}
+          </div>
+
+          <div className="h-4 w-px bg-black/10 dark:bg-white/10 mx-0.5 shrink-0" />
+
+          {/* 3. Selector de Tamaño de Letra Rápido */}
+          <div className="relative">
+            <button
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => setActiveSubmenu((prev) => (prev === "size" ? null : "size"))}
+              className={`flex items-center gap-1 px-2 py-1 rounded-xl text-xs font-semibold transition-all ${
+                activeSubmenu === "size"
+                  ? "bg-blue-50 text-[#007AFF] dark:bg-blue-950/50"
+                  : "text-stone-700 dark:text-zinc-200 hover:bg-stone-100 dark:hover:bg-zinc-800"
+              }`}
+              title="Tamaño de letra"
+            >
+              <span>Tamaño</span>
+              <ChevronDown className="w-3 h-3 text-stone-400" />
+            </button>
+
+            {activeSubmenu === "size" && (
+              <div
+                data-notion-menu
+                className="absolute left-0 top-9 z-50 w-40 bg-white/95 dark:bg-zinc-800/95 backdrop-blur-xl border border-black/10 dark:border-white/15 rounded-xl shadow-xl p-1 animate-in fade-in zoom-in-95 duration-100 space-y-0.5"
+              >
+                <button
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => applyHtmlWrap('<span class="text-xs">', "</span>")}
+                  className="w-full px-2.5 py-1.5 rounded-lg text-xs text-stone-700 dark:text-zinc-200 hover:bg-stone-100 dark:hover:bg-zinc-700/60 text-left"
+                >
+                  Pequeño (12px)
+                </button>
+                <button
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => applyHtmlWrap('<span class="text-base">', "</span>")}
+                  className="w-full px-2.5 py-1.5 rounded-lg text-sm text-stone-700 dark:text-zinc-200 hover:bg-stone-100 dark:hover:bg-zinc-700/60 text-left font-medium"
+                >
+                  Normal (15px)
+                </button>
+                <button
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => applyHtmlWrap('<span class="text-lg font-medium">', "</span>")}
+                  className="w-full px-2.5 py-1.5 rounded-lg text-base text-stone-700 dark:text-zinc-200 hover:bg-stone-100 dark:hover:bg-zinc-700/60 text-left font-semibold"
+                >
+                  Mediano (18px)
+                </button>
+                <button
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => applyHtmlWrap('<span class="text-xl font-bold">', "</span>")}
+                  className="w-full px-2.5 py-1.5 rounded-lg text-lg text-stone-700 dark:text-zinc-200 hover:bg-stone-100 dark:hover:bg-zinc-700/60 text-left font-bold"
+                >
+                  Grande (20px)
+                </button>
+                <button
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => applyHtmlWrap('<span class="text-2xl font-extrabold tracking-tight">', "</span>")}
+                  className="w-full px-2.5 py-1.5 rounded-lg text-xl text-stone-700 dark:text-zinc-200 hover:bg-stone-100 dark:hover:bg-zinc-700/60 text-left font-extrabold"
+                >
+                  Gigante (24px)
+                </button>
+              </div>
+            )}
+          </div>
+
+          <div className="h-4 w-px bg-black/10 dark:bg-white/10 mx-0.5 shrink-0" />
+
+          {/* 4. Estilos en Línea (Negrita, Cursiva, Subrayado, Tachado, Código, Link) */}
+          <button
+            type="button"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => applyInlineFormat("**", "**")}
+            className="p-1.5 rounded-lg text-stone-700 dark:text-zinc-200 hover:bg-stone-100 dark:hover:bg-zinc-800 hover:text-black dark:hover:text-white transition-all active:scale-95"
+            title="Negrita (Ctrl+B)"
+          >
+            <Bold className="w-3.5 h-3.5" />
+          </button>
+
+          <button
+            type="button"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => applyInlineFormat("*", "*")}
+            className="p-1.5 rounded-lg text-stone-700 dark:text-zinc-200 hover:bg-stone-100 dark:hover:bg-zinc-800 hover:text-black dark:hover:text-white transition-all active:scale-95"
+            title="Cursiva (Ctrl+I)"
+          >
+            <Italic className="w-3.5 h-3.5" />
+          </button>
+
+          <button
+            type="button"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => applyHtmlWrap("<u>", "</u>")}
+            className="p-1.5 rounded-lg text-stone-700 dark:text-zinc-200 hover:bg-stone-100 dark:hover:bg-zinc-800 hover:text-black dark:hover:text-white transition-all active:scale-95"
+            title="Subrayado (Ctrl+U)"
+          >
+            <Underline className="w-3.5 h-3.5" />
+          </button>
+
+          <button
+            type="button"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => applyInlineFormat("~~", "~~")}
+            className="p-1.5 rounded-lg text-stone-700 dark:text-zinc-200 hover:bg-stone-100 dark:hover:bg-zinc-800 hover:text-black dark:hover:text-white transition-all active:scale-95"
+            title="Tachado"
+          >
+            <Strikethrough className="w-3.5 h-3.5" />
+          </button>
+
+          <button
+            type="button"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => applyInlineFormat("`", "`")}
+            className="p-1.5 rounded-lg text-stone-700 dark:text-zinc-200 hover:bg-stone-100 dark:hover:bg-zinc-800 hover:text-black dark:hover:text-white transition-all active:scale-95"
+            title="Código en línea"
+          >
+            <CodeIcon className="w-3.5 h-3.5" />
+          </button>
+
+          <button
+            type="button"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => setActiveSubmenu((prev) => (prev === "link" ? null : "link"))}
+            className={`p-1.5 rounded-lg transition-all active:scale-95 ${
+              activeSubmenu === "link"
+                ? "bg-blue-50 text-[#007AFF] dark:bg-blue-950/50"
+                : "text-stone-700 dark:text-zinc-200 hover:bg-stone-100 dark:hover:bg-zinc-800"
+            }`}
+            title="Insertar enlace"
+          >
+            <LinkIcon className="w-3.5 h-3.5" />
+          </button>
+
+          <div className="h-4 w-px bg-black/10 dark:bg-white/10 mx-0.5 shrink-0" />
+
+          {/* 5. Selector de Resaltador */}
+          <div className="relative">
+            <button
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => setActiveSubmenu((prev) => (prev === "highlight" ? null : "highlight"))}
+              className={`p-1.5 rounded-lg transition-all active:scale-95 flex items-center gap-0.5 ${
+                activeSubmenu === "highlight"
+                  ? "bg-amber-100 text-amber-800"
+                  : "text-stone-700 dark:text-zinc-200 hover:bg-stone-100 dark:hover:bg-zinc-800"
+              }`}
+              title="Resaltador (Marcador)"
+            >
+              <Highlighter className="w-3.5 h-3.5" />
+            </button>
+
+            {activeSubmenu === "highlight" && (
+              <div
+                data-notion-menu
+                className="absolute left-0 top-9 z-50 bg-white/95 dark:bg-zinc-800/95 backdrop-blur-xl border border-black/10 dark:border-white/15 rounded-xl shadow-xl p-2 animate-in fade-in zoom-in-95 duration-100 flex items-center gap-1.5 min-w-[200px]"
+              >
+                <button
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() =>
+                    applyHtmlWrap(
+                      '<mark class="bg-amber-200/90 text-amber-950 rounded px-1">',
+                      "</mark>"
+                    )
+                  }
+                  className="w-6 h-6 rounded-full bg-amber-300 border border-amber-400 hover:scale-110 active:scale-95 transition-transform"
+                  title="Amarillo Clásico"
+                />
+                <button
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() =>
+                    applyHtmlWrap(
+                      '<mark class="bg-blue-100 text-blue-900 rounded px-1">',
+                      "</mark>"
+                    )
+                  }
+                  className="w-6 h-6 rounded-full bg-blue-200 border border-blue-400 hover:scale-110 active:scale-95 transition-transform"
+                  title="Azul Suave"
+                />
+                <button
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() =>
+                    applyHtmlWrap(
+                      '<mark class="bg-emerald-100 text-emerald-900 rounded px-1">',
+                      "</mark>"
+                    )
+                  }
+                  className="w-6 h-6 rounded-full bg-emerald-200 border border-emerald-400 hover:scale-110 active:scale-95 transition-transform"
+                  title="Verde Menta"
+                />
+                <button
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() =>
+                    applyHtmlWrap(
+                      '<mark class="bg-rose-100 text-rose-900 rounded px-1">',
+                      "</mark>"
+                    )
+                  }
+                  className="w-6 h-6 rounded-full bg-rose-200 border border-rose-400 hover:scale-110 active:scale-95 transition-transform"
+                  title="Rosa Coral"
+                />
+                <button
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() =>
+                    applyHtmlWrap(
+                      '<mark class="bg-purple-100 text-purple-900 rounded px-1">',
+                      "</mark>"
+                    )
+                  }
+                  className="w-6 h-6 rounded-full bg-purple-200 border border-purple-400 hover:scale-110 active:scale-95 transition-transform"
+                  title="Púrpura Lavanda"
+                />
+                <div className="h-4 w-px bg-black/10 dark:bg-white/10 mx-0.5" />
+                <button
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={removeFormatting}
+                  className="p-1 rounded text-stone-400 hover:text-red-500 hover:bg-stone-100 dark:hover:bg-zinc-700/60"
+                  title="Quitar resaltado"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* 6. Selector de Color de Texto */}
+          <div className="relative">
+            <button
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => setActiveSubmenu((prev) => (prev === "color" ? null : "color"))}
+              className={`p-1.5 rounded-lg transition-all active:scale-95 flex items-center gap-0.5 ${
+                activeSubmenu === "color"
+                  ? "bg-purple-100 text-purple-800"
+                  : "text-stone-700 dark:text-zinc-200 hover:bg-stone-100 dark:hover:bg-zinc-800"
+              }`}
+              title="Color de texto"
+            >
+              <Palette className="w-3.5 h-3.5" />
+            </button>
+
+            {activeSubmenu === "color" && (
+              <div
+                data-notion-menu
+                className="absolute left-0 top-9 z-50 bg-white/95 dark:bg-zinc-800/95 backdrop-blur-xl border border-black/10 dark:border-white/15 rounded-xl shadow-xl p-2 animate-in fade-in zoom-in-95 duration-100 flex items-center gap-1.5 min-w-[200px]"
+              >
+                <button
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => applyHtmlWrap('<span class="text-[#007AFF]">', "</span>")}
+                  className="w-6 h-6 rounded-full bg-[#007AFF] hover:scale-110 active:scale-95 transition-transform"
+                  title="Azul Universitario"
+                />
+                <button
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => applyHtmlWrap('<span class="text-emerald-600">', "</span>")}
+                  className="w-6 h-6 rounded-full bg-emerald-600 hover:scale-110 active:scale-95 transition-transform"
+                  title="Verde Esmeralda"
+                />
+                <button
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => applyHtmlWrap('<span class="text-rose-600">', "</span>")}
+                  className="w-6 h-6 rounded-full bg-rose-600 hover:scale-110 active:scale-95 transition-transform"
+                  title="Rojo Carmesí"
+                />
+                <button
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => applyHtmlWrap('<span class="text-amber-600">', "</span>")}
+                  className="w-6 h-6 rounded-full bg-amber-500 hover:scale-110 active:scale-95 transition-transform"
+                  title="Naranja Cálido"
+                />
+                <button
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => applyHtmlWrap('<span class="text-purple-600">', "</span>")}
+                  className="w-6 h-6 rounded-full bg-purple-600 hover:scale-110 active:scale-95 transition-transform"
+                  title="Púrpura Real"
+                />
+                <div className="h-4 w-px bg-black/10 dark:bg-white/10 mx-0.5" />
+                <button
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={removeFormatting}
+                  className="p-1 rounded text-stone-400 hover:text-stone-700 hover:bg-stone-100 dark:hover:bg-zinc-700/60"
+                  title="Quitar color"
+                >
+                  <Baseline className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
+          </div>
+
+          <div className="h-4 w-px bg-black/10 dark:bg-white/10 mx-0.5 shrink-0" />
+
+          {/* 7. Limpiar Formato */}
+          <button
+            type="button"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={removeFormatting}
+            className="p-1.5 rounded-lg text-stone-400 hover:text-stone-700 dark:hover:text-zinc-200 hover:bg-stone-100 dark:hover:bg-zinc-800 transition-all active:scale-95"
+            title="Quitar todo el formato"
+          >
+            <Baseline className="w-3.5 h-3.5" />
+          </button>
+
+          {/* Submenú de Enlace Inline */}
+          {activeSubmenu === "link" && (
+            <div
+              data-notion-menu
+              className="absolute left-0 top-11 z-50 bg-white/95 dark:bg-zinc-800/95 backdrop-blur-xl border border-black/10 dark:border-white/15 rounded-xl shadow-xl p-1.5 flex items-center gap-1.5 min-w-[280px] animate-in fade-in zoom-in-95 duration-100"
+            >
+              <input
+                type="url"
+                autoFocus
+                placeholder="https://..."
+                value={linkInputUrl}
+                onChange={(e) => setLinkInputUrl(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    applyLink(linkInputUrl);
+                  }
+                }}
+                className="flex-1 bg-stone-100 dark:bg-zinc-700/60 text-xs px-2.5 py-1.5 rounded-lg border-none outline-none text-[#1C1C1E] dark:text-zinc-100 placeholder:text-stone-400"
+              />
+              <button
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => applyLink(linkInputUrl)}
+                className="px-2.5 py-1.5 rounded-lg bg-[#007AFF] text-white text-xs font-semibold hover:bg-blue-600 active:scale-95 shrink-0"
+              >
+                Guardar
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>

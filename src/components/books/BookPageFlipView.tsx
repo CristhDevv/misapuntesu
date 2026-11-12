@@ -146,16 +146,73 @@ export function BookPageFlipView({ book }: BookPageFlipViewProps) {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [handleNextPage, handlePrevPage]);
 
-  // Add new page action
-  const handleAddNewPage = () => {
+  // Add new page action - Siempre añade una nueva hoja al final del libro
+  const handleAddNewPage = useCallback(() => {
     startTransition(async () => {
-      const res = await createBookPageAction(book.id, activePage?.pageNumber);
+      const res = await createBookPageAction(book.id);
       if (res.success) {
         router.refresh();
         setCurrentPageIndex(totalPages);
       }
     });
-  };
+  }, [book.id, totalPages, router]);
+
+  // Paginación física automática (un libro no tiene scroll vertical)
+  const handlePageOverflow = useCallback(
+    (fromPageId: string) => {
+      if (isSpread) {
+        // En modo libro abierto (2 páginas):
+        if (leftPage && fromPageId === leftPage.id && rightPage) {
+          // Si se llena la hoja izquierda, enfocar el primer bloque de la hoja derecha abierta
+          const rightEditorEl = document.querySelector(
+            `[data-page-id="${rightPage.id}"] textarea`
+          ) as HTMLTextAreaElement | null;
+          if (rightEditorEl) {
+            rightEditorEl.focus();
+            return;
+          }
+        }
+
+        // Si se llena la hoja derecha (o no hay hoja derecha en el pliego actual)
+        if (spreadLeftIndex + 2 < totalPages) {
+          handleNextPage();
+          setTimeout(() => {
+            const nextEl = document.querySelector(
+              `[data-notion-editor="true"] textarea`
+            ) as HTMLTextAreaElement | null;
+            if (nextEl) nextEl.focus();
+          }, 380);
+        } else {
+          // Última página del libro: crear hoja nueva automáticamente al final
+          handleAddNewPage();
+        }
+      } else {
+        // Modo página simple (móvil o vertical)
+        if (currentPageIndex < totalPages - 1) {
+          handleNextPage();
+          setTimeout(() => {
+            const nextEl = document.querySelector(
+              `[data-notion-editor="true"] textarea`
+            ) as HTMLTextAreaElement | null;
+            if (nextEl) nextEl.focus();
+          }, 380);
+        } else {
+          // Última página del libro: crear hoja nueva automáticamente al final
+          handleAddNewPage();
+        }
+      }
+    },
+    [
+      isSpread,
+      leftPage,
+      rightPage,
+      spreadLeftIndex,
+      totalPages,
+      currentPageIndex,
+      handleNextPage,
+      handleAddNewPage,
+    ]
+  );
 
   // Toggle bookmark action
   const handleToggleBookmark = (pageId: string) => {
@@ -394,13 +451,14 @@ export function BookPageFlipView({ book }: BookPageFlipViewProps) {
                   <span className="font-mono text-[11px]">Pág {leftPage.pageNumber}</span>
                 </div>
 
-                {/* Notion Block Editor - Con scroll interno suave */}
-                <div className="flex-1 min-h-0 overflow-y-auto no-scrollbar py-1">
+                {/* Notion Block Editor - Hoja física de libro sin scroll vertical */}
+                <div className="flex-1 min-h-0 overflow-hidden relative py-1">
                   <NotionBlockEditor
                     key={leftPage.id}
                     pageId={leftPage.id}
                     initialBlocks={parseBlocks(leftPage.blocksJson)}
                     onSave={(blocks) => handleSaveBlocks(leftPage.id, blocks)}
+                    onPageOverflow={() => handlePageOverflow(leftPage.id)}
                     fontFamilyClass={fontFamilyClasses}
                     fontSizeClass={fontSizeClasses}
                     lineHeightClass={lineHeightClasses}
@@ -431,13 +489,14 @@ export function BookPageFlipView({ book }: BookPageFlipViewProps) {
                       <span className="font-mono text-[11px]">Pág {rightPage.pageNumber}</span>
                     </div>
 
-                    {/* Notion Block Editor */}
-                    <div className="flex-1 min-h-0 overflow-y-auto no-scrollbar py-1">
+                    {/* Notion Block Editor - Hoja física de libro sin scroll vertical */}
+                    <div className="flex-1 min-h-0 overflow-hidden relative py-1">
                       <NotionBlockEditor
                         key={rightPage.id}
                         pageId={rightPage.id}
                         initialBlocks={parseBlocks(rightPage.blocksJson)}
                         onSave={(blocks) => handleSaveBlocks(rightPage.id, blocks)}
+                        onPageOverflow={() => handlePageOverflow(rightPage.id)}
                         fontFamilyClass={fontFamilyClasses}
                         fontSizeClass={fontSizeClasses}
                         lineHeightClass={lineHeightClasses}
