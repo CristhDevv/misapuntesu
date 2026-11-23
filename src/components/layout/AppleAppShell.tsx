@@ -2,8 +2,9 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { Search, Sparkles } from "lucide-react";
+import { usePathname, useRouter } from "next/navigation";
+import { Search, Sparkles, LogOut } from "lucide-react";
+import { logoutUserAction } from "@/server/actions";
 import { BottomTabBar } from "./BottomTabBar";
 import { DesktopSidebar } from "./DesktopSidebar";
 import { SpotlightSearchModal } from "./SpotlightSearchModal";
@@ -39,14 +40,28 @@ if (typeof window !== "undefined") {
   };
 }
 
+interface ShellUser {
+  id: string;
+  name: string;
+  email: string;
+  career: string | null;
+  semester: string | null;
+}
+
 interface AppleAppShellProps {
   children: React.ReactNode;
   subjects?: Array<{ id: string; name: string; emoji: string; color: string }>;
+  user?: ShellUser | null;
 }
 
-export function AppleAppShell({ children, subjects = [] }: AppleAppShellProps) {
+export function AppleAppShell({ children, subjects = [], user = null }: AppleAppShellProps) {
   const pathname = usePathname();
+  const router = useRouter();
   const isBookReader = Boolean(pathname && pathname.startsWith("/books/") && pathname !== "/books");
+  const isPublicView =
+    pathname === "/login" ||
+    pathname === "/register" ||
+    (pathname === "/" && !user);
 
   const [searchOpen, setSearchOpen] = useState(false);
   const [copilotOpen, setCopilotOpen] = useState(false);
@@ -54,6 +69,7 @@ export function AppleAppShell({ children, subjects = [] }: AppleAppShellProps) {
 
   // Global Shortcuts: Cmd+K (Spotlight) & Cmd+J (Copiloto)
   useEffect(() => {
+    if (isPublicView) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
@@ -65,7 +81,17 @@ export function AppleAppShell({ children, subjects = [] }: AppleAppShellProps) {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, []);
+  }, [isPublicView]);
+
+  if (isPublicView) {
+    return <>{children}</>;
+  }
+
+  const handleMobileLogout = async () => {
+    await logoutUserAction();
+    router.push("/login");
+    router.refresh();
+  };
 
   return (
     <div
@@ -82,6 +108,7 @@ export function AppleAppShell({ children, subjects = [] }: AppleAppShellProps) {
           onOpenCopilot={() => setCopilotOpen(true)}
           onOpenAISettings={() => setAiSettingsOpen(true)}
           subjects={subjects}
+          user={user}
         />
       )}
 
@@ -115,6 +142,15 @@ export function AppleAppShell({ children, subjects = [] }: AppleAppShellProps) {
               >
                 <Search className="w-5 h-5" />
               </button>
+              {user && (
+                <button
+                  onClick={handleMobileLogout}
+                  className="p-2 rounded-full text-[#8E8E93] hover:text-[#FF3B30] hover:bg-black/5 transition-colors"
+                  title="Cerrar sesión"
+                >
+                  <LogOut className="w-4 h-4" />
+                </button>
+              )}
             </div>
           </header>
         )}

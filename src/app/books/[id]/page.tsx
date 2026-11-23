@@ -1,4 +1,5 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
+import { getCurrentUser } from "@/lib/auth";
 import { getCourseBookById } from "@/server/queries";
 import { BookPageFlipView } from "@/components/books/BookPageFlipView";
 
@@ -7,8 +8,10 @@ export async function generateMetadata({
 }: {
   params: Promise<{ id: string }>;
 }) {
+  const user = await getCurrentUser();
+  if (!user) return { title: "Iniciar sesión | MisApuntesU" };
   const { id } = await params;
-  const book = await getCourseBookById(id);
+  const book = await getCourseBookById(id, user.id);
   if (!book) return { title: "Libro no encontrado" };
   return {
     title: `${book.title} | El Cuaderno Adaptativo`,
@@ -21,8 +24,11 @@ export default async function BookDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+
   const { id } = await params;
-  const book = await getCourseBookById(id);
+  const book = await getCourseBookById(id, user.id);
 
   if (!book) {
     notFound();

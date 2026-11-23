@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { AppleAppShell } from "@/components/layout/AppleAppShell";
+import { getCurrentUser } from "@/lib/auth";
 
 export const metadata: Metadata = {
   title: "El Cuaderno Adaptativo | App Universitaria",
@@ -17,11 +18,12 @@ export const viewport: Viewport = {
   themeColor: "#F2F2F7",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  const user = await getCurrentUser();
   return (
     <html lang="es" className="h-full" suppressHydrationWarning>
       <head>
@@ -63,7 +65,7 @@ export default function RootLayout({
         suppressHydrationWarning
         className="min-h-full bg-[#F2F2F7] text-[#1C1C1E] selection:bg-[#007AFF]/20 selection:text-[#007AFF]"
       >
-        <AppleAppShell>{children}</AppleAppShell>
+        <AppleAppShell user={user}>{children}</AppleAppShell>
       </body>
     </html>
   );

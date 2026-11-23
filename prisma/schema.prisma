@@ -11,9 +11,46 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
+// 0. Estudiante / Cuenta de Usuario
+model User {
+  id           String           @id @default(cuid())
+  name         String
+  email        String           @unique
+  passwordHash String
+  career       String?          // Carrera universitaria (opcional)
+  semester     String?          // Semestre actual (opcional)
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  sessions        UserSession[]
+  subjects        Subject[]
+  scheduleBlocks  ScheduleBlock[]
+  courseBooks     CourseBook[]
+  aiNotifications AINotification[]
+  aiSettings      AISettings?
+
+  @@map("users")
+}
+
+// 0.1 Sesiones Activas HTTP-Only
+model UserSession {
+  id        String   @id @default(cuid())
+  tokenHash String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("user_sessions")
+}
+
 // 1. Materia / Cuaderno Universitario
 model Subject {
   id           String            @id @default(cuid())
+  userId       String?
+  user         User?             @relation(fields: [userId], references: [id], onDelete: Cascade)
   name         String            // ej. "Cálculo I", "Fundamentos de Diseño"
   emoji        String            @default("📚") // ej. "📐", "🎨", "🗣️", "🔬"
   color        String            @default("#007AFF") // Apple hex: #007AFF, #5856D6, #34C759, #FF9500, #FF2D55, #AF52DE, #5AC8FA
@@ -29,12 +66,15 @@ model Subject {
   grades       GradeItem[]
   courseBooks  CourseBook[]
 
+  @@index([userId])
   @@map("subjects")
 }
 
 // 2. Bloque del Horario Híbrido (Clases U + Hábitos + Aprendizaje Externo)
 model ScheduleBlock {
   id                String      @id @default(cuid())
+  userId            String?
+  user              User?       @relation(fields: [userId], references: [id], onDelete: Cascade)
   subjectId         String?     // Opcional para Hábitos o Estudio Externo
   subject           Subject?    @relation(fields: [subjectId], references: [id], onDelete: Cascade)
   blockType         String      @default("UNIVERSITY_CLASS") // "UNIVERSITY_CLASS", "HABIT", "EXTERNAL_STUDY"
@@ -55,6 +95,7 @@ model ScheduleBlock {
 
   habitLogs         HabitLog[]
 
+  @@index([userId])
   @@index([subjectId])
   @@index([dayOfWeek])
   @@index([blockType])
@@ -139,6 +180,8 @@ model GradeItem {
 // 7. Notificaciones, Alertas y Consejos Proactivos de Gemini
 model AINotification {
   id        String   @id @default(cuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
   title     String   // ej. "🔥 Racha en peligro", "⚡ Próxima Clase en 15 min"
   message   String   // Contenido motivador o recordatorio redactado por IA
   type      String   // "REMINDER", "STUDY_TIP", "HABIT_NUDGE", "GRADE_ALERT"
@@ -147,6 +190,7 @@ model AINotification {
   isRead    Boolean  @default(false)
   createdAt DateTime @default(now())
 
+  @@index([userId])
   @@index([isRead])
   @@index([createdAt])
   @@map("ai_notifications")
@@ -155,6 +199,8 @@ model AINotification {
 // 8. Configuración del Motor Gemini AI
 model AISettings {
   id                         String   @id @default("default")
+  userId                     String?  @unique
+  user                       User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
   geminiApiKey               String?  // API key guardada por el usuario o leída de env
   modelName                  String   @default("gemini-3.5-flash") // Modelo principal
   enableBrowserNotifications Boolean  @default(true)
@@ -167,6 +213,8 @@ model AISettings {
 // 9. Cursos y Libros Propios con Experiencia 3D y Edición por Bloques Notion
 model CourseBook {
   id            String           @id @default(cuid())
+  userId        String?
+  user          User?            @relation(fields: [userId], references: [id], onDelete: Cascade)
   title         String           // Título del libro/curso
   subtitle      String?          // Subtítulo editorial
   description   String?          // Resumen o sinopsis del curso
@@ -191,6 +239,7 @@ model CourseBook {
 
   pages         CourseBookPage[]
 
+  @@index([userId])
   @@index([subjectId])
   @@index([category])
   @@map("course_books")

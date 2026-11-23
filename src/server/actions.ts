@@ -15,8 +15,19 @@ import {
   courseBookSchema,
   updateCourseBookCustomizationSchema,
   updateBookPageSchema,
+  loginSchema,
+  registerSchema,
   NotionBlock,
 } from "@/lib/validations";
+import {
+  getCurrentUser,
+  hashPassword,
+  verifyPassword,
+  createUserSession,
+  destroyCurrentSession,
+  claimOrphanAcademicDataForFirstUser,
+  AuthenticatedUser,
+} from "@/lib/auth";
 import { searchSpotlight } from "./queries";
 import {
   generateDailyBriefingAI,
@@ -40,6 +51,115 @@ function safeRevalidate(path: string) {
 }
 
 // ============================================================================
+// 0. AUTENTICACIÓN Y SESIÓN DE ESTUDIANTES
+// ============================================================================
+
+export async function getCurrentUserAction(): Promise<AuthenticatedUser | null> {
+  return getCurrentUser();
+}
+
+export async function registerUserAction(
+  rawData: unknown
+): Promise<ActionResponse<AuthenticatedUser>> {
+  try {
+    const validated = registerSchema.parse(rawData);
+
+    const existing = await prisma.user.findUnique({
+      where: { email: validated.email },
+      select: { id: true },
+    });
+
+    if (existing) {
+      return {
+        success: false,
+        error: "Ya existe una cuenta registrada con ese correo electrónico.",
+      };
+    }
+
+    const passwordHash = hashPassword(validated.password);
+    const createdUser = await prisma.user.create({
+      data: {
+        name: validated.name,
+        email: validated.email,
+        passwordHash,
+        career: validated.career || null,
+        semester: validated.semester || null,
+      },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        career: true,
+        semester: true,
+      },
+    });
+
+    // Preservar libros y materias existentes vinculándolos a la primera cuenta creada
+    await claimOrphanAcademicDataForFirstUser(createdUser.id);
+    await createUserSession(createdUser.id);
+
+    safeRevalidate("/");
+    safeRevalidate("/subjects");
+    safeRevalidate("/books");
+    safeRevalidate("/schedule");
+    safeRevalidate("/grades");
+    return { success: true, data: createdUser };
+  } catch (err: unknown) {
+    return { success: false, error: (err as Error).message };
+  }
+}
+
+export async function loginUserAction(
+  rawData: unknown
+): Promise<ActionResponse<AuthenticatedUser>> {
+  try {
+    const validated = loginSchema.parse(rawData);
+
+    const user = await prisma.user.findUnique({
+      where: { email: validated.email },
+    });
+
+    if (!user || !verifyPassword(validated.password, user.passwordHash)) {
+      return {
+        success: false,
+        error: "Correo electrónico o contraseña incorrectos.",
+      };
+    }
+
+    await createUserSession(user.id);
+
+    safeRevalidate("/");
+    safeRevalidate("/subjects");
+    safeRevalidate("/books");
+    safeRevalidate("/schedule");
+    safeRevalidate("/grades");
+
+    return {
+      success: true,
+      data: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        career: user.career,
+        semester: user.semester,
+      },
+    };
+  } catch (err: unknown) {
+    return { success: false, error: (err as Error).message };
+  }
+}
+
+export async function logoutUserAction(): Promise<ActionResponse<boolean>> {
+  try {
+    await destroyCurrentSession();
+    safeRevalidate("/");
+    return { success: true, data: true };
+  } catch (err: unknown) {
+    return { success: false, error: (err as Error).message };
+  }
+}
+
+// ============================================================================
 // 1. MATERIAS (SUBJECTS)
 // ============================================================================
 
@@ -47,7 +167,10 @@ export async function getSidebarSubjectsAction(): Promise<
   Array<{ id: string; name: string; emoji: string; color: string }>
 > {
   try {
+    const user = await getCurrentUser();
+    if (!user) return [];
     return await prisma.subject.findMany({
+      where: { userId: user.id },
       select: { id: true, name: true, emoji: true, color: true },
       orderBy: { name: "asc" },
     });
@@ -61,8 +184,10 @@ export async function createSubjectAction(
 ): Promise<ActionResponse<{ id: string }>> {
   try {
     const validated = subjectSchema.parse(rawData);
+    const user = await getCurrentUser();
     const subject = await prisma.subject.create({
       data: {
+        userId: user?.id ?? null,
         name: validated.name,
         emoji: validated.emoji || "📚",
         color: validated.color || "#007AFF",
@@ -135,10 +260,12 @@ export async function createScheduleBlockAction(
         : [validated.dayOfWeek || 1];
 
     const createdIds: string[] = [];
+    const user = await getCurrentUser();
 
     for (const d of days) {
       const block = await prisma.scheduleBlock.create({
         data: {
+          userId: user?.id ?? null,
           subjectId: validated.subjectId || null,
           blockType: validated.blockType || "UNIVERSITY_CLASS",
           customTitle: validated.customTitle || null,
@@ -637,9 +764,11 @@ export async function createCourseBookAction(
 ): Promise<ActionResponse<{ id: string; title: string }>> {
   try {
     const validated = courseBookSchema.parse(rawInput);
+    const user = await getCurrentUser();
 
     const book = await prisma.courseBook.create({
       data: {
+        userId: user?.id ?? null,
         title: validated.title,
         subtitle: validated.subtitle || null,
         description: validated.description || null,

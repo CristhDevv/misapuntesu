@@ -1,4 +1,5 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
+import { getCurrentUser } from "@/lib/auth";
 import { getNoteById } from "@/server/queries";
 import { AdaptiveNotebookView } from "@/components/notes/AdaptiveNotebookView";
 
@@ -7,8 +8,11 @@ export default async function NoteDetailPage({
 }: {
   params: Promise<{ id: string; noteId: string }>;
 }) {
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+
   const { noteId } = await params;
-  const note = await getNoteById(noteId);
+  const note = await getNoteById(noteId, user.id);
 
   if (!note) {
     notFound();

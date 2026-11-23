@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   Sparkles,
   BookOpen,
@@ -10,18 +10,25 @@ import {
   Calculator,
   Search,
   Plus,
-  Bot,
   Settings,
   Library,
+  LogOut,
 } from "lucide-react";
 import { PomodoroWidget } from "../pomodoro/PomodoroWidget";
-import { getSidebarSubjectsAction } from "@/server/actions";
+import { getSidebarSubjectsAction, logoutUserAction } from "@/server/actions";
 
 interface DesktopSidebarProps {
   onOpenSearch: () => void;
   onOpenCopilot?: () => void;
   onOpenAISettings?: () => void;
   subjects?: Array<{ id: string; name: string; emoji: string; color: string }>;
+  user?: {
+    id: string;
+    name: string;
+    email: string;
+    career: string | null;
+    semester: string | null;
+  } | null;
 }
 
 export function DesktopSidebar({
@@ -29,9 +36,17 @@ export function DesktopSidebar({
   onOpenCopilot,
   onOpenAISettings,
   subjects: initialSubjects = [],
+  user = null,
 }: DesktopSidebarProps) {
   const pathname = usePathname();
+  const router = useRouter();
   const [subjects, setSubjects] = useState(initialSubjects);
+
+  const handleLogout = async () => {
+    await logoutUserAction();
+    router.push("/login");
+    router.refresh();
+  };
 
   useEffect(() => {
     getSidebarSubjectsAction().then((data) => {
@@ -201,20 +216,33 @@ export function DesktopSidebar({
         )}
 
         <div className="px-2 text-[11px] text-[#8E8E93] flex items-center justify-between">
-          <div className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-[#34C759]" title="Sistema Activo" />
-            <span>Semestre en curso</span>
+          <div className="flex items-center gap-1.5 min-w-0">
+            <span className="w-2 h-2 rounded-full bg-[#34C759] shrink-0" title="Sistema Activo" />
+            <span className="truncate font-medium text-[#1C1C1E]">
+              {user ? user.name : "Semestre en curso"}
+            </span>
           </div>
 
-          {onOpenAISettings && (
-            <button
-              onClick={onOpenAISettings}
-              className="p-1 rounded-lg hover:bg-black/5 text-[#8E8E93] hover:text-[#1C1C1E] transition-colors"
-              title="Configuración de Gemini AI"
-            >
-              <Settings className="w-3.5 h-3.5" />
-            </button>
-          )}
+          <div className="flex items-center gap-1 shrink-0">
+            {onOpenAISettings && (
+              <button
+                onClick={onOpenAISettings}
+                className="p-1.5 rounded-lg hover:bg-black/5 text-[#8E8E93] hover:text-[#1C1C1E] transition-colors"
+                title="Configuración de Gemini AI"
+              >
+                <Settings className="w-3.5 h-3.5" />
+              </button>
+            )}
+            {user && (
+              <button
+                onClick={handleLogout}
+                className="p-1.5 rounded-lg hover:bg-[#FF3B30]/10 text-[#8E8E93] hover:text-[#FF3B30] transition-colors"
+                title="Cerrar sesión"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </aside>

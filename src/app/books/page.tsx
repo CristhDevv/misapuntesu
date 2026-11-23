@@ -1,3 +1,5 @@
+import { redirect } from "next/navigation";
+import { getCurrentUser } from "@/lib/auth";
 import { getCourseBooksList, getSubjectsList } from "@/server/queries";
 import { BookshelfView } from "@/components/books/BookshelfView";
 
@@ -8,9 +10,12 @@ export const metadata = {
 };
 
 export default async function BooksPage() {
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+
   const [books, subjects] = await Promise.all([
-    getCourseBooksList(),
-    getSubjectsList(),
+    getCourseBooksList(user.id),
+    getSubjectsList(user.id),
   ]);
 
   return <BookshelfView books={books} subjects={subjects} />;

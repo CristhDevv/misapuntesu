@@ -1,11 +1,22 @@
 import { prisma } from "@/lib/prisma";
 import { formatDateFull } from "@/lib/utils";
+import { getCurrentUser } from "@/lib/auth";
+
+async function resolveScopeUserId(explicitUserId?: string): Promise<string | null> {
+  if (explicitUserId) return explicitUserId;
+  const user = await getCurrentUser();
+  return user?.id ?? null;
+}
 
 // ============================================================================
 // 1. PANTALLA "HOY" (RESUMEN INTELIGENTE DEL DÍA)
 // ============================================================================
 
-export async function getTodayOverview() {
+export async function getTodayOverview(explicitUserId?: string) {
+  const userId = await resolveScopeUserId(explicitUserId);
+  const userScope = userId ? { userId } : {};
+  const subjectRelationScope = userId ? { subject: { userId } } : {};
+
   const now = new Date();
   // En JS: 0=Domingo, 1=Lunes, 2=Martes... 6=Sábado -> convertimos a 1..7 (7 = Domingo)
   let dayOfWeek = now.getDay();
@@ -19,7 +30,7 @@ export async function getTodayOverview() {
   const [todaySchedules, upcomingTasks, reviewNotes, allSubjects, unreadNotificationsCount] = await Promise.all([
     // Horario del día actual con logs de hoy
     prisma.scheduleBlock.findMany({
-      where: { dayOfWeek },
+      where: { dayOfWeek, ...userScope },
       orderBy: { startTime: "asc" },
       include: {
         subject: {
@@ -41,7 +52,7 @@ export async function getTodayOverview() {
 
     // Próximos parciales y entregas
     prisma.taskAssignment.findMany({
-      where: { isCompleted: false },
+      where: { isCompleted: false, ...subjectRelationScope },
       orderBy: { dueDate: "asc" },
       take: 6,
       include: {
@@ -55,6 +66,7 @@ export async function getTodayOverview() {
     prisma.notePage.findMany({
       where: {
         masteryLevel: { in: ["RED_HARD", "YELLOW_MEDIUM"] },
+        ...subjectRelationScope,
       },
       orderBy: { updatedAt: "desc" },
       take: 6,
@@ -67,6 +79,7 @@ export async function getTodayOverview() {
 
     // Lista de materias para accesos rápidos
     prisma.subject.findMany({
+      where: userScope,
       orderBy: { name: "asc" },
       include: {
         _count: { select: { notes: true, tasks: true } },
@@ -75,7 +88,7 @@ export async function getTodayOverview() {
 
     // Notificaciones no leídas
     prisma.aINotification.count({
-      where: { isRead: false },
+      where: { isRead: false, ...userScope },
     }),
   ]);
 
@@ -125,7 +138,10 @@ export async function getTodayOverview() {
 // 2. HORARIO SEMANAL (HÍBRIDO: CLASES + HÁBITOS + ESTUDIO EXTERNO)
 // ============================================================================
 
-export async function getScheduleWeekly() {
+export async function getScheduleWeekly(explicitUserId?: string) {
+  const userId = await resolveScopeUserId(explicitUserId);
+  const userScope = userId ? { userId } : {};
+
   const now = new Date();
   let dayOfWeek = now.getDay();
   if (dayOfWeek === 0) dayOfWeek = 7;
@@ -133,6 +149,7 @@ export async function getScheduleWeekly() {
 
   const [schedulesRaw, subjects] = await Promise.all([
     prisma.scheduleBlock.findMany({
+      where: userScope,
       orderBy: [{ dayOfWeek: "asc" }, { startTime: "asc" }],
       include: {
         subject: {
@@ -153,6 +170,7 @@ export async function getScheduleWeekly() {
     }),
 
     prisma.subject.findMany({
+      where: userScope,
       select: { id: true, name: true, emoji: true, color: true, defaultRoom: true },
       orderBy: { name: "asc" },
     }),
@@ -171,8 +189,10 @@ export async function getScheduleWeekly() {
 // 3. MIS MATERIAS (LISTA Y DETALLE)
 // ============================================================================
 
-export async function getSubjectsList() {
+export async function getSubjectsList(explicitUserId?: string) {
+  const userId = await resolveScopeUserId(explicitUserId);
   const subjects = await prisma.subject.findMany({
+    where: userId ? { userId } : {},
     orderBy: { name: "asc" },
     include: {
       grades: true,
@@ -213,7 +233,8 @@ export async function getSubjectsList() {
   });
 }
 
-export async function getSubjectDetail(id: string) {
+export async function getSubjectDetail(id: string, explicitUserId?: string) {
+  const userId = await resolveScopeUserId(explicitUserId);
   const subject = await prisma.subject.findUnique({
     where: { id },
     include: {
@@ -233,6 +254,7 @@ export async function getSubjectDetail(id: string) {
   });
 
   if (!subject) return null;
+  if (userId && subject.userId !== userId) return null;
 
   const gradedItems = subject.grades.filter((g) => g.score !== null);
   const totalCompletedWeight = gradedItems.reduce((acc, g) => acc + g.weightPercent, 0);
@@ -248,13 +270,15 @@ export async function getSubjectDetail(id: string) {
   };
 }
 
-export async function getNoteById(id: string) {
-  return prisma.notePage.findUnique({
+export async function getNoteById(id: string, explicitUserId?: string) {
+  const userId = await resolveScopeUserId(explicitUserId);
+  const note = await prisma.notePage.findUnique({
     where: { id },
     include: {
       subject: {
         select: {
           id: true,
+          userId: true,
           name: true,
           emoji: true,
           color: true,
@@ -262,6 +286,9 @@ export async function getNoteById(id: string) {
       },
     },
   });
+  if (!note) return null;
+  if (userId && note.subject.userId !== userId) return null;
+  return note;
 }
 
 // ============================================================================
@@ -291,8 +318,10 @@ export interface SubjectGradeCalculation {
   }>;
 }
 
-export async function getGradesOverview(): Promise<SubjectGradeCalculation[]> {
+export async function getGradesOverview(explicitUserId?: string): Promise<SubjectGradeCalculation[]> {
+  const userId = await resolveScopeUserId(explicitUserId);
   const subjects = await prisma.subject.findMany({
+    where: userId ? { userId } : {},
     orderBy: { name: "asc" },
     include: {
       grades: {
@@ -376,15 +405,21 @@ export async function getGradesOverview(): Promise<SubjectGradeCalculation[]> {
 // 5. BÚSQUEDA SPOTLIGHT (CMD + K)
 // ============================================================================
 
-export async function searchSpotlight(query: string) {
+export async function searchSpotlight(query: string, explicitUserId?: string) {
   const clean = query.trim().toLowerCase();
   if (!clean) {
     return { subjects: [], notes: [], tasks: [], books: [], bookPages: [] };
   }
 
+  const userId = await resolveScopeUserId(explicitUserId);
+  const userScope = userId ? { userId } : {};
+  const subjectRelationScope = userId ? { subject: { userId } } : {};
+  const bookRelationScope = userId ? { book: { userId } } : {};
+
   const [subjects, notes, tasks, books, bookPages] = await Promise.all([
     prisma.subject.findMany({
       where: {
+        ...userScope,
         OR: [
           { name: { contains: clean } },
           { teacherName: { contains: clean } },
@@ -396,6 +431,7 @@ export async function searchSpotlight(query: string) {
 
     prisma.notePage.findMany({
       where: {
+        ...subjectRelationScope,
         OR: [
           { title: { contains: clean } },
           { freeContent: { contains: clean } },
@@ -414,6 +450,7 @@ export async function searchSpotlight(query: string) {
 
     prisma.taskAssignment.findMany({
       where: {
+        ...subjectRelationScope,
         title: { contains: clean },
       },
       take: 5,
@@ -426,6 +463,7 @@ export async function searchSpotlight(query: string) {
 
     prisma.courseBook.findMany({
       where: {
+        ...userScope,
         OR: [
           { title: { contains: clean } },
           { subtitle: { contains: clean } },
@@ -438,6 +476,7 @@ export async function searchSpotlight(query: string) {
 
     prisma.courseBookPage.findMany({
       where: {
+        ...bookRelationScope,
         OR: [
           { title: { contains: clean } },
           { blocksJson: { contains: clean } },
@@ -459,10 +498,11 @@ export async function searchSpotlight(query: string) {
 // 6. CONSULTAS DE GEMINI AI & NOTIFICACIONES
 // ============================================================================
 
-export async function getAISettingsQuery() {
-  const settings = await prisma.aISettings.findUnique({
-    where: { id: "default" },
-  });
+export async function getAISettingsQuery(explicitUserId?: string) {
+  const userId = await resolveScopeUserId(explicitUserId);
+  const settings = userId
+    ? await prisma.aISettings.findUnique({ where: { userId } })
+    : await prisma.aISettings.findUnique({ where: { id: "default" } });
 
   return {
     geminiApiKey: settings?.geminiApiKey || "",
@@ -476,8 +516,10 @@ export async function getAISettingsQuery() {
   };
 }
 
-export async function getAINotificationsQuery() {
+export async function getAINotificationsQuery(explicitUserId?: string) {
+  const userId = await resolveScopeUserId(explicitUserId);
   return prisma.aINotification.findMany({
+    where: userId ? { userId } : {},
     orderBy: { createdAt: "desc" },
     take: 12,
   });
@@ -487,8 +529,10 @@ export async function getAINotificationsQuery() {
 // 7. MIS CURSOS / BIBLIOTECA DE LIBROS (COURSEBOOKS)
 // ============================================================================
 
-export async function getCourseBooksList() {
+export async function getCourseBooksList(explicitUserId?: string) {
+  const userId = await resolveScopeUserId(explicitUserId);
   const books = await prisma.courseBook.findMany({
+    where: userId ? { userId } : {},
     orderBy: { updatedAt: "desc" },
     include: {
       subject: {
@@ -503,7 +547,8 @@ export async function getCourseBooksList() {
   return books;
 }
 
-export async function getCourseBookById(bookId: string) {
+export async function getCourseBookById(bookId: string, explicitUserId?: string) {
+  const userId = await resolveScopeUserId(explicitUserId);
   const book = await prisma.courseBook.findUnique({
     where: { id: bookId },
     include: {
@@ -518,6 +563,9 @@ export async function getCourseBookById(bookId: string) {
       },
     },
   });
+
+  if (!book) return null;
+  if (userId && book.userId !== userId) return null;
 
   return book;
 }
