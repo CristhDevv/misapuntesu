@@ -36,6 +36,7 @@ import {
   evaluateFeynmanAI,
   chatWithCopilotAI,
   checkAndGenerateSmartAlerts,
+  organizeLiveClassAI,
 } from "@/lib/gemini";
 
 type ActionResponse<T = unknown> =
@@ -1088,6 +1089,167 @@ Responde ÚNICAMENTE en JSON válido con este formato:
 
     safeRevalidate(`/books/${bookId}`);
     return { success: true, data: { pagesCreated: outline.length } };
+  } catch (err: unknown) {
+    return { success: false, error: (err as Error).message };
+  }
+}
+
+// ============================================================================
+// 8. MODO CLASE EN VIVO (SINCRONA)
+// ============================================================================
+
+export async function startLiveClassAction(
+  subjectId: string,
+  customTitle?: string
+): Promise<ActionResponse<{ id: string; subjectId: string }>> {
+  try {
+    const user = await getCurrentUser();
+    const subject = await prisma.subject.findUnique({
+      where: { id: subjectId },
+      select: { id: true, userId: true, name: true },
+    });
+
+    if (!subject || (user && subject.userId && subject.userId !== user.id)) {
+      return { success: false, error: "No se encontró la materia seleccionada." };
+    }
+
+    const now = new Date();
+    const dateLabel = now.toLocaleDateString("es-ES", {
+      day: "numeric",
+      month: "short",
+    });
+    const title = customTitle?.trim() || `Clase en vivo — ${dateLabel}`;
+
+    const note = await prisma.notePage.create({
+      data: {
+        subjectId: subject.id,
+        title,
+        studyMethod: "FREE",
+        masteryLevel: "YELLOW_MEDIUM",
+        freeContent: "",
+      },
+      select: { id: true, subjectId: true },
+    });
+
+    safeRevalidate("/");
+    safeRevalidate(`/subjects/${subject.id}`);
+    return { success: true, data: note };
+  } catch (err: unknown) {
+    return { success: false, error: (err as Error).message };
+  }
+}
+
+export async function organizeLiveClassAction(
+  noteId: string,
+  targetBookId?: string
+): Promise<
+  ActionResponse<{
+    noteId: string;
+    subjectId: string;
+    flashcardsCount: number;
+    usedAI: boolean;
+    exportedBookId?: string;
+  }>
+> {
+  try {
+    const user = await getCurrentUser();
+    const note = await prisma.notePage.findUnique({
+      where: { id: noteId },
+      include: {
+        subject: { select: { id: true, name: true, userId: true } },
+      },
+    });
+
+    if (!note || (user && note.subject.userId && note.subject.userId !== user.id)) {
+      return { success: false, error: "No se encontró el apunte de clase." };
+    }
+
+    const rawNotes = note.freeContent?.trim() || note.title;
+    const organized = await organizeLiveClassAI({
+      subjectName: note.subject.name,
+      classTitle: note.title,
+      rawNotes,
+    });
+
+    let existingFlashcards: Array<{ id: string; question: string; answer: string; learned: boolean }> = [];
+    try {
+      const parsed = JSON.parse(note.flashcardsJson || "[]");
+      if (Array.isArray(parsed)) existingFlashcards = parsed;
+    } catch {
+      // ignore
+    }
+
+    const combinedFlashcards = [...existingFlashcards, ...organized.flashcards];
+
+    await prisma.notePage.update({
+      where: { id: note.id },
+      data: {
+        studyMethod: "CORNELL",
+        freeContent: organized.cleanNotes,
+        cornellCues: organized.cornellCues,
+        cornellSummary: organized.cornellSummary,
+        flashcardsJson: JSON.stringify(combinedFlashcards),
+      },
+    });
+
+    let exportedBookId: string | undefined;
+    if (targetBookId) {
+      const book = await prisma.courseBook.findUnique({
+        where: { id: targetBookId },
+        select: { id: true, userId: true },
+      });
+
+      if (book && (!user || !book.userId || book.userId === user.id)) {
+        const currentCount = await prisma.courseBookPage.count({ where: { bookId: book.id } });
+        const ts = Date.now();
+        const bodyLines = organized.cleanNotes
+          .split("\n")
+          .map((l) => l.trim())
+          .filter(Boolean);
+
+        const blocks: NotionBlock[] = [
+          { id: `b_${ts}_h1`, type: "h1", content: note.title },
+          {
+            id: `b_${ts}_sum`,
+            type: "callout",
+            content: organized.cornellSummary,
+            calloutIcon: "✨",
+            calloutColor: "blue",
+          },
+          ...bodyLines.slice(0, 18).map((line, i) => ({
+            id: `b_${ts}_l_${i}`,
+            type: (line.startsWith("- ") || line.startsWith("* ") ? "bullet" : "paragraph") as NotionBlock["type"],
+            content: line.replace(/^[-*]\s+/, ""),
+          })),
+        ];
+
+        await prisma.courseBookPage.create({
+          data: {
+            bookId: book.id,
+            pageNumber: currentCount + 1,
+            title: note.title,
+            blocksJson: JSON.stringify(blocks),
+          },
+        });
+
+        exportedBookId = book.id;
+        safeRevalidate(`/books/${book.id}`);
+      }
+    }
+
+    safeRevalidate(`/subjects/${note.subjectId}`);
+    safeRevalidate(`/subjects/${note.subjectId}/notes/${note.id}`);
+
+    return {
+      success: true,
+      data: {
+        noteId: note.id,
+        subjectId: note.subjectId,
+        flashcardsCount: organized.flashcards.length,
+        usedAI: organized.usedAI,
+        exportedBookId,
+      },
+    };
   } catch (err: unknown) {
     return { success: false, error: (err as Error).message };
   }

@@ -5,4 +5,5 @@ import "./actions.test";
 import "./books.test";
 import "./auth.test";
 import "./pwa.test";
+import "./live.test";
 import "./qa_full_suite.test";

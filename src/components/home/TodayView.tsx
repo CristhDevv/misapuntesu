@@ -20,6 +20,7 @@ import {
   Check,
   X,
   Loader2,
+  Radio,
 } from "lucide-react";
 import { formatDateFull, getCountdownBadge } from "@/lib/utils";
 import { MASTERY_LEVELS, TASK_TYPES, TaskTypeKey, MasteryLevelKey } from "@/lib/validations";
@@ -221,8 +222,17 @@ export function TodayView({ data }: TodayViewProps) {
           </h1>
         </div>
 
-        {/* Botones de Cabecera: Briefing Gemini + Campana de Alertas */}
+        {/* Botones de Cabecera: Clase en Vivo + Briefing Gemini + Campana de Alertas */}
         <div className="flex items-center gap-2.5">
+          <Link
+            href="/live"
+            className="min-h-[40px] flex items-center gap-1.5 px-3.5 py-2 rounded-2xl bg-white hover:bg-white/90 text-[#1C1C1E] border border-black/10 text-xs font-semibold shadow-2xs transition-all active:scale-95"
+            title="Abrir modo rápido para tomar apuntes durante una clase en vivo"
+          >
+            <Radio className="w-3.5 h-3.5 text-[#FF3B30]" />
+            <span>Clase en vivo</span>
+          </Link>
+
           <button
             onClick={handleGenerateBriefing}
             disabled={isBriefingLoading}
@@ -416,14 +426,23 @@ export function TodayView({ data }: TodayViewProps) {
                   </>
                 ) : (
                   active.subject && (
-                    <Link
-                      href={`/subjects/${active.subject.id}`}
-                      className="w-full flex items-center justify-center gap-2 py-3 px-4 rounded-2xl text-sm font-semibold text-white transition-all shadow-sm active:scale-[0.98]"
-                      style={{ backgroundColor: color }}
-                    >
-                      <span>Abrir cuaderno de esta clase</span>
-                      <ArrowRight className="w-4 h-4" />
-                    </Link>
+                    <div className="w-full flex flex-col sm:flex-row items-center gap-2">
+                      <Link
+                        href={`/live?subjectId=${active.subject.id}`}
+                        className="w-full sm:flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-2xl text-sm font-semibold text-white transition-all shadow-sm active:scale-[0.98]"
+                        style={{ backgroundColor: color }}
+                      >
+                        <Radio className="w-4 h-4" />
+                        <span>Tomar notas en vivo</span>
+                      </Link>
+                      <Link
+                        href={`/subjects/${active.subject.id}`}
+                        className="w-full sm:w-auto inline-flex items-center justify-center gap-2 py-3 px-4 rounded-2xl bg-black/5 hover:bg-black/10 text-[#1C1C1E] text-sm font-semibold transition-all active:scale-95"
+                      >
+                        <span>Abrir cuaderno</span>
+                        <ArrowRight className="w-4 h-4" />
+                      </Link>
+                    </div>
                   )
                 )}
               </div>

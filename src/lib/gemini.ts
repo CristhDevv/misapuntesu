@@ -527,3 +527,110 @@ export async function checkAndGenerateSmartAlerts(): Promise<
 
   return allRecent;
 }
+
+// ============================================================================
+// 9. ORGANIZADOR INTELIGENTE DE CLASE EN VIVO (SÍNCRONA)
+// ============================================================================
+
+export interface OrganizedLiveClassResult {
+  cleanNotes: string;
+  cornellCues: string;
+  cornellSummary: string;
+  flashcards: Array<{ id: string; question: string; answer: string; learned: boolean }>;
+  usedAI: boolean;
+}
+
+export async function organizeLiveClassAI(params: {
+  subjectName: string;
+  classTitle: string;
+  rawNotes: string;
+}): Promise<OrganizedLiveClassResult> {
+  const { subjectName, classTitle, rawNotes } = params;
+
+  const buildFallback = (): OrganizedLiveClassResult => {
+    const lines = rawNotes
+      .split("\n")
+      .map((l) => l.trim())
+      .filter(Boolean);
+
+    const examLines = lines.filter((l) => l.includes("🎯"));
+    const defLines = lines.filter((l) => l.includes("📌"));
+    const cueBullets = [...examLines, ...defLines, ...lines.slice(0, 4)]
+      .slice(0, 6)
+      .map((l) => `- ${l.replace(/^\[\d{2}:\d{2}\]\s*/, "")}`);
+
+    const flashcards = (examLines.length > 0 ? examLines : defLines.slice(0, 3)).map(
+      (line, idx) => {
+        const clean = line.replace(/^\[\d{2}:\d{2}\]\s*/, "").replace(/[🎯📌❓]\s*/g, "").trim();
+        return {
+          id: `fc_live_${Date.now()}_${idx}`,
+          question: `¿Qué destacó el profesor sobre: "${clean.slice(0, 80)}${clean.length > 80 ? "..." : ""}"?`,
+          answer: clean,
+          learned: false,
+        };
+      }
+    );
+
+    return {
+      cleanNotes: rawNotes,
+      cornellCues: cueBullets.join("\n") || "- Ideas principales de la clase",
+      cornellSummary: `Clase de ${subjectName} (${classTitle}). Se registraron ${lines.length} apuntes en vivo${
+        examLines.length > 0 ? `, incluyendo ${examLines.length} puntos clave de parcial` : ""
+      }.`,
+      flashcards,
+      usedAI: false,
+    };
+  };
+
+  try {
+    const config = await getGeminiConfig();
+    if (!config.hasKey) {
+      return buildFallback();
+    }
+
+    const prompt = `Eres un asistente universitario experto. Un estudiante tomó estas notas rápidas durante una clase síncrona en vivo.
+
+Materia: ${subjectName}
+Título de clase: ${classTitle}
+
+Notas crudas en vivo (las líneas con 🎯 son temas que el profesor dijo que salen en el parcial, ❓ son dudas y 📌 definiciones):
+"""
+${rawNotes}
+"""
+
+Organiza estas notas sin inventar información ajena. Devuelve EXCLUSIVAMENTE un JSON válido (sin markdown ni texto extra) con esta estructura exacta:
+{
+  "cleanNotes": "Apuntes limpios y ordenados en Markdown con subtítulos y viñetas claras, conservando los datos clave.",
+  "cornellCues": "Lista en viñetas (- ) con las 4 a 7 preguntas clave o conceptos detonantes para estudiar.",
+  "cornellSummary": "Resumen claro de máximo 3 a 4 líneas con la esencia de la clase.",
+  "flashcards": [
+    { "question": "Pregunta concreta estilo parcial", "answer": "Respuesta clara y precisa" }
+  ]
+}`;
+
+    const text = await generateContentResilient(prompt);
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) return buildFallback();
+
+    const parsed = JSON.parse(jsonMatch[0]);
+    const ts = Date.now();
+    const flashcards = Array.isArray(parsed.flashcards)
+      ? parsed.flashcards.slice(0, 8).map((fc: { question?: string; answer?: string }, i: number) => ({
+          id: `fc_live_${ts}_${i}`,
+          question: String(fc.question || "Pregunta de repaso"),
+          answer: String(fc.answer || ""),
+          learned: false,
+        }))
+      : [];
+
+    return {
+      cleanNotes: String(parsed.cleanNotes || rawNotes),
+      cornellCues: String(parsed.cornellCues || ""),
+      cornellSummary: String(parsed.cornellSummary || ""),
+      flashcards,
+      usedAI: true,
+    };
+  } catch {
+    return buildFallback();
+  }
+}

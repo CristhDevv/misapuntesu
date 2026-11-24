@@ -18,6 +18,7 @@ import {
   Sparkles,
   MapPin,
   User,
+  Radio,
 } from "lucide-react";
 import {
   MASTERY_LEVELS,
@@ -279,6 +280,15 @@ export function SubjectDetailView({ subject, initialNoteId }: SubjectDetailProps
           </div>
 
           <div className="flex items-center gap-2">
+            <Link
+              href={`/live?subjectId=${subject.id}`}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-2xl text-xs font-semibold bg-white text-[#1C1C1E] border border-black/10 hover:bg-white/90 transition-all shadow-2xs active:scale-95"
+              title="Iniciar modo clase en vivo"
+            >
+              <Radio className="w-3.5 h-3.5 text-[#FF3B30]" />
+              <span>Clase en vivo</span>
+            </Link>
+
             <button
               onClick={() => setIsCreatingNote(true)}
               className="flex items-center gap-1.5 px-4 py-2 rounded-2xl text-xs font-semibold text-white transition-all shadow-xs active:scale-95"

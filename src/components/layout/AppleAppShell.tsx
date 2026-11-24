@@ -57,7 +57,9 @@ interface AppleAppShellProps {
 export function AppleAppShell({ children, subjects = [], user = null }: AppleAppShellProps) {
   const pathname = usePathname();
   const router = useRouter();
-  const isBookReader = Boolean(pathname && pathname.startsWith("/books/") && pathname !== "/books");
+  const isBookReader = Boolean(
+    pathname && ((pathname.startsWith("/books/") && pathname !== "/books") || pathname.startsWith("/live"))
+  );
   const isPublicView =
     pathname === "/login" ||
     pathname === "/register" ||
