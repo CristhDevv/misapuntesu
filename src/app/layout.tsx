@@ -1,12 +1,26 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { AppleAppShell } from "@/components/layout/AppleAppShell";
+import { PwaSupport } from "@/components/pwa/PwaSupport";
 import { getCurrentUser } from "@/lib/auth";
 
 export const metadata: Metadata = {
-  title: "El Cuaderno Adaptativo | App Universitaria",
+  title: "MisApuntesU | App Universitaria",
   description:
-    "El espacio de estudio inteligente para estudiantes universitarios: Apuntes Adaptativos (Cornell, Feynman, Active Recall), Horario y Calculadora de Promedio.",
+    "El espacio de estudio inteligente para estudiantes universitarios: Apuntes Adaptativos (Cornell, Feynman, Active Recall), Libros, Horario y Calculadora de Promedio.",
+  manifest: "/manifest.webmanifest",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "MisApuntesU",
+  },
+  icons: {
+    icon: [
+      { url: "/icons/icon-192.png", sizes: "192x192", type: "image/png" },
+      { url: "/icons/icon-512.png", sizes: "512x512", type: "image/png" },
+    ],
+    apple: [{ url: "/icons/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
+  },
 };
 
 export const viewport: Viewport = {
@@ -15,7 +29,7 @@ export const viewport: Viewport = {
   maximumScale: 1,
   userScalable: false,
   viewportFit: "cover",
-  themeColor: "#F2F2F7",
+  themeColor: "#007AFF",
 };
 
 export default async function RootLayout({
@@ -66,6 +80,7 @@ export default async function RootLayout({
         className="min-h-full bg-[#F2F2F7] text-[#1C1C1E] selection:bg-[#007AFF]/20 selection:text-[#007AFF]"
       >
         <AppleAppShell user={user}>{children}</AppleAppShell>
+        <PwaSupport />
       </body>
     </html>
   );
